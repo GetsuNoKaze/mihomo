@@ -3,14 +3,17 @@ package trusttunnel
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/httputils"
 	N "github.com/metacubex/mihomo/common/net"
 
 	"github.com/metacubex/http"
+	"github.com/metacubex/http/httputil"
 	"github.com/metacubex/quic-go/http3"
 	"github.com/metacubex/sing/common"
 	"github.com/metacubex/sing/common/auth"
@@ -40,6 +43,9 @@ type ServiceOptions struct {
 	QUICCongestionControl string
 	QUICCwnd              int
 	QUICBBRProfile        string
+	// Fallback is an optional backend (host:port) that unauthenticated requests are
+	// served from, so active probing sees an ordinary web server instead of a proxy.
+	Fallback string
 }
 
 type Service struct {
@@ -56,10 +62,31 @@ type Service struct {
 	tcpListener           net.Listener
 	tlsListener           net.Listener
 	udpConn               net.PacketConn
+	fallbackProxy         *httputil.ReverseProxy
+	fallbackTransport     *http.Transport
+	fallbackSlots         chan struct{}
+	fallbackIdleTimeout   time.Duration
+	// fallbackCtx is cancelled on Close so in-flight fallback requests stop too,
+	// including upgraded connections that the HTTP servers no longer track.
+	fallbackCtx    context.Context
+	fallbackCancel context.CancelFunc
 }
 
+const (
+	// fallbackIdleTimeout bounds how long a fallback request may go without any
+	// body bytes moving in either direction, like nginx's proxy_read_timeout.
+	// It is an idle limit, not a total one, so long downloads and SSE streams
+	// that keep sending keep working.
+	fallbackIdleTimeout = 60 * time.Second
+	// fallbackMaxConcurrent caps in-flight fallback requests so a slow or hung
+	// backend cannot pin an unbounded number of handlers and backend connections.
+	fallbackMaxConcurrent = 256
+)
+
+type fallbackWatchdogKey struct{}
+
 func NewService(options ServiceOptions) *Service {
-	return &Service{
+	s := &Service{
 		ctx:                   options.Ctx,
 		logger:                options.Logger,
 		handler:               options.Handler,
@@ -68,6 +95,55 @@ func NewService(options ServiceOptions) *Service {
 		quicCwnd:              options.QUICCwnd,
 		quicBBRProfile:        options.QUICBBRProfile,
 	}
+	if options.Fallback != "" {
+		// A dedicated transport with timeouts for connecting and for the response
+		// headers; stalled bodies are handled by the idle watchdog in serveFallback.
+		s.fallbackTransport = &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+			ResponseHeaderTimeout: 10 * time.Second,
+			IdleConnTimeout:       30 * time.Second,
+		}
+		s.fallbackCtx, s.fallbackCancel = context.WithCancel(context.Background())
+		s.fallbackSlots = make(chan struct{}, fallbackMaxConcurrent)
+		s.fallbackIdleTimeout = fallbackIdleTimeout
+		target := options.Fallback
+		s.fallbackProxy = &httputil.ReverseProxy{
+			Transport:     s.fallbackTransport,
+			FlushInterval: -1, // flush each write so SSE and streaming are not buffered
+			// Rewrite (unlike Director) drops any Forwarded/X-Forwarded-* the client
+			// sent, so a prober cannot spoof the IP, scheme or host the backend sees.
+			Rewrite: func(r *httputil.ProxyRequest) {
+				r.Out.URL.Scheme = "http"
+				r.Out.URL.Host = target
+				// Keep the client's Host header: named virtual hosts keep working and
+				// the internal backend address is not leaked in redirects.
+				r.Out.Host = r.In.Host
+				r.SetXForwarded()
+			},
+			ModifyResponse: func(response *http.Response) error {
+				watchdog, loaded := response.Request.Context().Value(fallbackWatchdogKey{}).(*idleWatchdog)
+				if !loaded {
+					return nil
+				}
+				// An upgraded (WebSocket) connection may legitimately stay quiet for
+				// long, so it is left to the concurrency cap instead of the idle limit.
+				if response.StatusCode == http.StatusSwitchingProtocols {
+					watchdog.stop()
+					return nil
+				}
+				watchdog.startResponse()
+				response.Body = &idleReadCloser{ReadCloser: response.Body, watchdog: watchdog, response: true}
+				return nil
+			},
+			ErrorHandler: func(writer http.ResponseWriter, request *http.Request, err error) {
+				if s.logger != nil {
+					s.logger.DebugContext(request.Context(), E.Cause(err, "fallback request from ", request.RemoteAddr))
+				}
+				writer.WriteHeader(http.StatusBadGateway)
+			},
+		}
+	}
+	return s
 }
 
 func (s *Service) Start(tcpListener net.Listener, udpConn net.PacketConn, tlsConfig *tls.Config) error {
@@ -92,7 +168,15 @@ func (s *Service) Start(tcpListener net.Listener, udpConn net.PacketConn, tlsCon
 		listener := tcpListener
 		s.tcpListener = tcpListener
 		if tlsConfig != nil {
-			listener = tls.NewListener(listener, tlsConfig)
+			tcpTLSConfig := tlsConfig
+			if s.fallbackProxy != nil && len(tlsConfig.NextProtos) == 0 {
+				// A real HTTPS site negotiates ALPN, so a browser or scanner offering
+				// h2 gets h2 instead of no protocol at all. TrustTunnel clients offer
+				// h2 and keep working.
+				tcpTLSConfig = tlsConfig.Clone()
+				tcpTLSConfig.NextProtos = []string{"h2", "http/1.1"}
+			}
+			listener = tls.NewListener(listener, tcpTLSConfig)
 			s.tlsListener = listener
 		}
 		go func() {
@@ -116,6 +200,9 @@ func (s *Service) UpdateUsers(users map[string]string) {
 }
 
 func (s *Service) Close() error {
+	if s.fallbackCancel != nil {
+		s.fallbackCancel()
+	}
 	var shutdownErr error
 	if s.httpServer != nil {
 		const shutdownTimeout = 5 * time.Second
@@ -125,6 +212,9 @@ func (s *Service) Close() error {
 		if errors.Is(shutdownErr, http.ErrServerClosed) {
 			shutdownErr = nil
 		}
+	}
+	if s.fallbackTransport != nil {
+		s.fallbackTransport.CloseIdleConnections()
 	}
 	closeErr := common.Close(
 		common.PtrOrNil(s.httpServer),
@@ -140,6 +230,9 @@ func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	authorization := request.Header.Get("Proxy-Authorization")
 	username, loaded := s.verify(authorization)
 	if !loaded {
+		if s.serveFallback(writer, request) {
+			return
+		}
 		writer.WriteHeader(http.StatusProxyAuthRequired)
 		s.badRequest(request.Context(), request, E.New("authorization failed"))
 		return
@@ -260,6 +353,191 @@ func (s *Service) verify(authorization string) (username string, loaded bool) {
 
 func (s *Service) badRequest(ctx context.Context, request *http.Request, err error) {
 	s.logger.ErrorContext(ctx, E.Cause(err, "process connection from ", request.RemoteAddr))
+}
+
+// serveFallback serves an unauthenticated request from the configured backend
+// instead of answering with proxy-specific status codes, which makes the port
+// harder to identify with a single probe. It runs only when a fallback backend
+// is configured; otherwise the caller keeps the previous 407 response. It
+// returns true when it has handled the request.
+//
+// Every method goes to the backend, CONNECT included, so the backend's own
+// answer (status, headers, body) is what a prober sees for it too, instead of a
+// response the backend would never produce.
+//
+// The reverse proxy strips hop-by-hop headers, carries WebSocket upgrades, and
+// flushes streaming responses. A backend that fails to connect or to send
+// headers in time yields 502. Once headers have been sent the status can no
+// longer change, so a body that stalls for fallbackIdleTimeout in either
+// direction aborts the response instead, the way a reverse proxy drops a dead
+// upstream or a client that stopped reading.
+func (s *Service) serveFallback(writer http.ResponseWriter, request *http.Request) bool {
+	if s.fallbackProxy == nil {
+		return false
+	}
+	select {
+	case s.fallbackSlots <- struct{}{}:
+		defer func() { <-s.fallbackSlots }()
+	default:
+		writer.WriteHeader(http.StatusServiceUnavailable)
+		return true
+	}
+	ctx, cancel := context.WithCancel(request.Context())
+	defer cancel()
+	go func() {
+		select {
+		case <-s.fallbackCtx.Done():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	controller := http.NewResponseController(writer)
+	watchdog := newIdleWatchdog(s.fallbackIdleTimeout, func() {
+		// Stop the backend side and release a read stuck on a client that stopped
+		// uploading. Writes are left alone here: an HTTP/1 server may still be
+		// draining the request body before it sends an early answer such as 413.
+		cancel()
+		_ = controller.SetReadDeadline(time.Now())
+	}, func() {
+		// Still running a full idle period later, so the handler is stuck writing
+		// to a client that stopped reading. Deadlines are per stream on HTTP/2
+		// and HTTP/3, and HTTP/1 carries one request at a time, so other requests
+		// are not affected.
+		err := controller.SetWriteDeadline(time.Now())
+		if err != nil && s.logger != nil {
+			s.logger.WarnContext(ctx, E.Cause(err, "abort stalled fallback response to ", request.RemoteAddr))
+		}
+	})
+	defer watchdog.stop()
+	request = request.WithContext(context.WithValue(ctx, fallbackWatchdogKey{}, watchdog))
+	if request.Body != nil && request.Body != http.NoBody {
+		var bodyFinished *atomic.Bool
+		request.Body, bodyFinished = newFallbackRequestBody(ctx, request.Body, watchdog)
+		defer func() {
+			if !bodyFinished.Load() {
+				// The backend answered before the whole body arrived (an early 413,
+				// say). The server drains the rest before it sends the answer, so
+				// release that read instead of waiting on a client that may never
+				// send more; the server then answers and closes the connection.
+				_ = controller.SetReadDeadline(time.Now())
+			}
+		}()
+	}
+	s.fallbackProxy.ServeHTTP(writer, request)
+	if watchdog.stop() {
+		// The response was cut short. Abort it so the client sees a reset rather
+		// than a body that looks complete; the proxy does this itself only when
+		// it recognises the server it runs under.
+		panic(http.ErrAbortHandler)
+	}
+	return true
+}
+
+// newFallbackRequestBody feeds the inbound body through a pipe that is closed as
+// soon as the request is cancelled. The transport waits for the body writer
+// before RoundTrip returns, so without this a client that stops uploading would
+// keep the handler and the backend connection even after cancellation.
+// The returned flag reports whether the whole inbound body has been read.
+func newFallbackRequestBody(ctx context.Context, body io.ReadCloser, watchdog *idleWatchdog) (io.ReadCloser, *atomic.Bool) {
+	reader, writer := io.Pipe()
+	finished := new(atomic.Bool)
+	go func() {
+		_, err := io.Copy(writer, &idleReadCloser{ReadCloser: body, watchdog: watchdog})
+		finished.Store(err == nil)
+		_ = writer.CloseWithError(err)
+	}()
+	go func() {
+		<-ctx.Done()
+		_ = writer.CloseWithError(ctx.Err())
+	}()
+	return reader, finished
+}
+
+// idleWatchdog calls onIdle once no body data has moved for timeout, and
+// onStuck if the request is still running a further timeout after that.
+type idleWatchdog struct {
+	access       sync.Mutex
+	timer        *time.Timer
+	timeout      time.Duration
+	onIdle       func()
+	onStuck      func()
+	responding   bool
+	responseDone bool
+	stopped      bool
+	fired        bool
+	stuck        bool
+}
+
+func newIdleWatchdog(timeout time.Duration, onIdle func(), onStuck func()) *idleWatchdog {
+	w := &idleWatchdog{timeout: timeout, onIdle: onIdle, onStuck: onStuck}
+	w.timer = time.AfterFunc(timeout, w.fire)
+	return w
+}
+
+func (w *idleWatchdog) fire() {
+	w.access.Lock()
+	defer w.access.Unlock()
+	if w.stopped {
+		return
+	}
+	if !w.fired {
+		w.fired = true
+		w.onIdle()
+		w.timer.Reset(w.timeout)
+		return
+	}
+	w.stuck = true
+	w.onStuck()
+}
+
+func (w *idleWatchdog) touch() {
+	w.access.Lock()
+	defer w.access.Unlock()
+	if !w.stopped && !w.fired {
+		w.timer.Reset(w.timeout)
+	}
+}
+
+// startResponse records that the response is being written to the client.
+func (w *idleWatchdog) startResponse() {
+	w.access.Lock()
+	defer w.access.Unlock()
+	w.responding = true
+}
+
+// finishResponse records that the whole backend response body has been read.
+func (w *idleWatchdog) finishResponse() {
+	w.access.Lock()
+	defer w.access.Unlock()
+	w.responseDone = true
+}
+
+// stop disarms the watchdog; once it returns, no callback will run. It reports
+// whether the response was cut short: either writes were aborted, or the body
+// was still incomplete when the backend side was cancelled.
+func (w *idleWatchdog) stop() (truncated bool) {
+	w.access.Lock()
+	defer w.access.Unlock()
+	w.stopped = true
+	w.timer.Stop()
+	return w.stuck || (w.fired && w.responding && !w.responseDone)
+}
+
+type idleReadCloser struct {
+	io.ReadCloser
+	watchdog *idleWatchdog
+	response bool
+}
+
+func (r *idleReadCloser) Read(p []byte) (n int, err error) {
+	n, err = r.ReadCloser.Read(p)
+	if n > 0 {
+		r.watchdog.touch()
+	}
+	if err == io.EOF && r.response {
+		r.watchdog.finishResponse()
+	}
+	return
 }
 
 // h2ConnWrapper used to avoid "panic: Write called after Handler finished" for gun.Conn
