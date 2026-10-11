@@ -36,9 +36,7 @@ func handleVShareLink(names map[string]int, url *url.URL, scheme string, proxy m
 		if alpn := query.Get("alpn"); alpn != "" {
 			proxy["alpn"] = strings.Split(alpn, ",")
 		}
-		if pcs := query.Get("pcs"); pcs != "" {
-			proxy["fingerprint"] = pcs
-		}
+		handleTLSShareLinkQuery(query, proxy)
 	}
 	if sni := query.Get("sni"); sni != "" {
 		proxy["servername"] = sni
@@ -53,6 +51,10 @@ func handleVShareLink(names map[string]int, url *url.URL, scheme string, proxy m
 				realityOpts["support-x25519mlkem768"] = enabled
 			}
 		}
+		if pqv := query.Get("pqv"); pqv != "" { // Xray's mldsa65Verify
+			realityOpts["mldsa65-verify"] = pqv
+		}
+		// spx (Xray's spiderX) is ignored: there is no spider in the REALITY client
 		proxy["reality-opts"] = realityOpts
 	}
 
