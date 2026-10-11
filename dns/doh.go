@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/component/ca"
 	"github.com/metacubex/mihomo/component/resolver"
 	C "github.com/metacubex/mihomo/constant"
@@ -36,9 +37,15 @@ const (
 	// connections in HTTP transport.
 	transportDefaultIdleConnTimeout = 5 * time.Minute
 
-	dialTimeout        = 10 * time.Second
+	dialTimeout = 10 * time.Second
 
-	maxElapsedTime  = time.Second * 30
+	maxElapsedTime = time.Second * 30
+
+	// maxDoHResponseSize caps a DoH response body. A DNS message can never be
+	// larger than 65535 bytes (its length is a 16-bit field on every
+	// stream transport), so anything longer is not a valid answer and is
+	// rejected instead of being buffered.
+	maxDoHResponseSize = 65535
 )
 
 var DefaultHTTPVersions = []C.HTTPVersion{C.HTTPVersion11, C.HTTPVersion2}
@@ -229,11 +236,6 @@ func (doh *dnsOverHTTPS) exchangeHTTPS(ctx context.Context, client *http.Client,
 	}
 	defer httpResp.Body.Close()
 
-	body, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", doh.url, err)
-	}
-
 	if httpResp.StatusCode != http.StatusOK {
 		return nil,
 			fmt.Errorf(
@@ -244,13 +246,18 @@ func (doh *dnsOverHTTPS) exchangeHTTPS(ctx context.Context, client *http.Client,
 			)
 	}
 
+	body, err := utils.ReadAllLimit(httpResp.Body, maxDoHResponseSize)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: response %w", doh.url, err)
+	}
+
 	resp = &D.Msg{}
 	err = resp.Unpack(body)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"unpacking response from %s: body is %s: %w",
+			"unpacking response from %s: body is %d bytes: %w",
 			doh.url,
-			body,
+			len(body),
 			err,
 		)
 	}
