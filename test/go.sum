@@ -57,6 +57,8 @@ github.com/fxamacker/cbor/v2 v2.9.0 h1:NpKPmjDBgUfBms6tr6JZkTHtfFGcMKsw3eGcmD/sa
 github.com/fxamacker/cbor/v2 v2.9.0/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/gaukas/godicttls v0.0.4 h1:NlRaXb3J6hAnTmWdsEKb9bcSBD6BvcIjdGdeb0zfXbk=
 github.com/gaukas/godicttls v0.0.4/go.mod h1:l6EenT4TLWgTdwslVb4sEMOCf7Bv0JAK67deKr9/NCI=
+github.com/getmikan/utls v1.8.8-citrus.1 h1:0khgh+/PKgMHVnR7AsRxL7cQAeY7tLJVJhhZsGdrXME=
+github.com/getmikan/utls v1.8.8-citrus.1/go.mod h1:gxkPJpm+5l3rStQM59z70up244h0tv4TlSkB5dlakjU=
 github.com/github/fakeca v0.1.0 h1:Km/MVOFvclqxPM9dZBC4+QE564nU4gz4iZ0D9pMw28I=
 github.com/go-ole/go-ole v1.3.0 h1:Dt6ye7+vXGIKZ7Xtk4s6/xVdGDQynvom7xCFEdWr6uE=
 github.com/go-ole/go-ole v1.3.0/go.mod h1:5LS6F96DhAwUc7C+1HLexzMXY1xGRSryjyPPKW6zv78=
@@ -149,6 +151,8 @@ github.com/metacubex/mhurl v0.1.0 h1:ZdW4Zxe3j3uJ89gNytOazHu6kbHn5owutN/VfXOI8GE
 github.com/metacubex/mhurl v0.1.0/go.mod h1:2qpQImCbXoUs6GwJrjuEXKelPyoimsIXr07eNKZdS00=
 github.com/metacubex/mipstack v0.0.0-20260930071539-961d4b1c1983 h1:BGb9PDJrrZSsDnJyeFWFY9v6uTr6/LxokQgwuHVAsDI=
 github.com/metacubex/mipstack v0.0.0-20260930071539-961d4b1c1983/go.mod h1:+bbwALZI0pbi2auSG5A3ptdpV2DZ2eLObziXo+P7oj0=
+github.com/metacubex/mldsa v0.1.1 h1:Tl9+FeM+AUqL5lG3C8JuoxVGsIINuY0b7XsQgz8jwyU=
+github.com/metacubex/mldsa v0.1.1/go.mod h1:RY6NOdBYmQ17ZRAn5TgXtJCTmuaI3oYdU+XicSGO8Lg=
 github.com/metacubex/mlkem v0.1.0 h1:wFClitonSFcmipzzQvax75beLQU+D7JuC+VK1RzSL8I=
 github.com/metacubex/mlkem v0.1.0/go.mod h1:amhaXZVeYNShuy9BILcR7P0gbeo/QLZsnqCdL8U2PDQ=
 github.com/metacubex/nftables v0.0.0-20260426003805-208c2c1ba2cb h1:wk6mHYPURSUvWcUv72gNP79oiylFsscBSDPJ6ieV6Iw=
@@ -191,8 +195,6 @@ github.com/metacubex/tfo-go v0.0.0-20260623020846-376a77860b8c h1:+2C1UshSLzaogL
 github.com/metacubex/tfo-go v0.0.0-20260623020846-376a77860b8c/go.mod h1:l9oLnLoEXyGZ5RVLsh7QCC5XsouTUyKk4F2nLm2DHLw=
 github.com/metacubex/tls v0.1.8 h1:BHF2payjtxC7wdR3tnq8vl3FAgEQB6/pPjP2tJNTsP4=
 github.com/metacubex/tls v0.1.8/go.mod h1:0XeVdL0cBw+8i5Hqy3lVeP9IyD/LFTq02ExvHM6rzEM=
-github.com/metacubex/utls v1.8.8 h1:7fiMYahL+tT1I/vG1MWidv88r/3A5NnPrurjzApZGyQ=
-github.com/metacubex/utls v1.8.8/go.mod h1:kncGGVhFaoGn5M3pFe3SXhZCzsbCJayNOH4UEqTKTko=
 github.com/metacubex/wazero v0.0.0-20260628025728-9ae6bdcf2a7d h1:UMFI+kdp0jA8s9tC7oul0pWeTW6s8lnm0dD5PT+RY14=
 github.com/metacubex/wazero v0.0.0-20260628025728-9ae6bdcf2a7d/go.mod h1:p48xp436h1oGfoXuEnVONeDhTW+E2UpY94GAVxA62oI=
 github.com/metacubex/wireguard-go v0.0.0-20250820062549-a6cecdd7f57f h1:FGBPRb1zUabhPhDrlKEjQ9lgIwQ6cHL4x8M9lrERhbk=

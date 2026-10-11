@@ -78,10 +78,10 @@ var randomFingerprint = once.OnceValue(func() UClientHelloID {
 	return fingerprint
 })
 
-// In utls v1.8.8 only chrome (Chrome 133) and hellochrome_131 carry an X25519MLKEM768 key share,
-// chrome_pq* carry the obsolete X25519Kyber768Draft00; firefox (Firefox 120), safari (Safari 16.0),
-// ios, android, edge, 360 and qq are classical ones. REALITY injects an X25519MLKEM768 key share
-// into all of them, see UClientWithX25519MLKEM768.
+// chrome (Chrome 133), hellochrome_131, firefox (Firefox 148) and safari (Safari 26.3, both from
+// the getmikan/utls fork) carry an X25519MLKEM768 key share of their own; chrome_pq* carry the
+// obsolete X25519Kyber768Draft00; ios, android, edge, 360, qq and the older versions are classical
+// ones. REALITY injects an X25519MLKEM768 key share into those, see UClientWithX25519MLKEM768.
 var fingerprints = map[string]UClientHelloID{
 	"chrome":  utls.HelloChrome_Auto,
 	"firefox": utls.HelloFirefox_Auto,
@@ -109,17 +109,17 @@ var fingerprints = map[string]UClientHelloID{
 	"randomizednoalpn":           utls.HelloRandomizedNoALPN,
 
 	// names used by Xray-core (the `fp` of share links), see Xray's transport/internet/tls/tls.go.
-	// The ones utls v1.8.8 has no parrot for are mapped to the nearest available fingerprint.
+	// The ones utls has no parrot for are mapped to the nearest available fingerprint.
 	"hellofirefox_120":                 utls.HelloFirefox_120,
-	"hellofirefox_148":                 utls.HelloFirefox_120, // nearest, no Firefox 148 parrot yet
+	"hellofirefox_148":                 utls.HelloFirefox_148,
 	"hellochrome_120":                  utls.HelloChrome_120,
 	"hellochrome_131":                  utls.HelloChrome_131,
 	"hellochrome_133":                  utls.HelloChrome_133,
 	"helloios_13":                      utls.HelloIOS_13,
 	"helloios_14":                      utls.HelloIOS_14,
-	"helloedge_106":                    utls.HelloEdge_Auto,   // HelloEdge_106 seems to be incompatible with utls
-	"hellosafari_26_3":                 utls.HelloSafari_16_0, // nearest, no Safari 26.3 parrot yet
-	"hello360_11_0":                    utls.Hello360_Auto,    // Hello360_11_0 seems to be incompatible with utls
+	"helloedge_106":                    utls.HelloEdge_Auto, // HelloEdge_106 seems to be incompatible with utls
+	"hellosafari_26_3":                 utls.HelloSafari_26_3,
+	"hello360_11_0":                    utls.Hello360_Auto, // Hello360_11_0 seems to be incompatible with utls
 	"helloqq_11_1":                     utls.HelloQQ_11_1,
 	"hellorandomized":                  utls.HelloRandomized,
 	"hellorandomizedalpn":              utls.HelloRandomizedALPN,
@@ -370,12 +370,20 @@ func BuildRemovedX25519MLKEM768HandshakeState(c *UConn) error {
 }
 
 // UClientWithX25519MLKEM768 returns a UConn with a built handshake state whose client hello
-// offers an X25519MLKEM768 key share placed before the X25519 one, also for the fingerprints
-// that do not carry one themselves (firefox, safari, ios, ...).
+// offers an X25519MLKEM768 key share placed before the X25519 one. The fingerprints carrying such
+// a key share themselves (chrome, firefox, safari) are used as they are, one is injected into
+// the others (ios, android, edge, 360, qq, randomized, older versions).
 func UClientWithX25519MLKEM768(c net.Conn, config *utls.Config, fingerprint UClientHelloID) (*UConn, error) {
 	spec, err := utls.UTLSIdToSpec(fingerprint)
 	if err != nil {
 		return nil, err
+	}
+	if !NeedX25519MLKEM768(&spec) {
+		uConn := utls.UClient(c, config, fingerprint)
+		if err = uConn.BuildHandshakeState(); err != nil {
+			return nil, err
+		}
+		return uConn, nil
 	}
 	AddX25519MLKEM768(&spec)
 	uConn := utls.UClient(c, config, utls.HelloCustom)
@@ -388,6 +396,51 @@ func UClientWithX25519MLKEM768(c net.Conn, config *utls.Config, fingerprint UCli
 		return nil, err
 	}
 	return uConn, nil
+}
+
+// NeedX25519MLKEM768 reports whether the spec has a key_share extension but lacks a single
+// X25519MLKEM768 key share placed before X25519 (in both supported_groups and key_share),
+// or still offers the obsolete X25519Kyber768Draft00, so AddX25519MLKEM768 has to fix it.
+func NeedX25519MLKEM768(spec *utls.ClientHelloSpec) bool {
+	var curves []utls.CurveID
+	var keyShares []utls.KeyShare
+	hasKeyShare := false
+	for _, extension := range spec.Extensions {
+		switch ext := extension.(type) {
+		case *utls.SupportedCurvesExtension:
+			curves = ext.Curves
+		case *utls.KeyShareExtension:
+			hasKeyShare = true
+			keyShares = ext.KeyShares
+		}
+	}
+	if !hasKeyShare {
+		return false
+	}
+	pqFirst := func(groups []utls.CurveID) bool {
+		pq, x25519 := -1, -1
+		for i, group := range groups {
+			switch group {
+			case utls.X25519Kyber768Draft00:
+				return false
+			case utls.X25519MLKEM768:
+				if pq >= 0 {
+					return false
+				}
+				pq = i
+			case utls.X25519:
+				if x25519 < 0 {
+					x25519 = i
+				}
+			}
+		}
+		return pq >= 0 && (x25519 < 0 || pq < x25519)
+	}
+	groups := make([]utls.CurveID, 0, len(keyShares))
+	for _, share := range keyShares {
+		groups = append(groups, share.Group)
+	}
+	return !pqFirst(curves) || !pqFirst(groups)
 }
 
 // AddX25519MLKEM768 makes the spec offer X25519MLKEM768 ahead of X25519 in both the
