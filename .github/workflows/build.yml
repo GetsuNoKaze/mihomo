@@ -15,10 +15,22 @@ on:
       - dev
     tags:
       - "v*"
+  # The full cross-build is ~100 jobs; on pull requests run it only when the
+  # build itself changes. Test covers the code on six platforms.
   pull_request:
     branches:
       - main
       - dev
+    paths:
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "Dockerfile"
+      - "constant/features/**"
+      - ".github/workflows/build.yml"
+      - ".github/release/**"
+      - ".github/*.sh"
+      - "docker/**"
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
@@ -163,14 +175,40 @@ jobs:
     - uses: actions/checkout@v6
 
     - name: Set up Go
+      id: setup_go_0
+      continue-on-error: true
       if: ${{ matrix.jobs.goversion == '' }}
       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
       with:
         go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
         go-version: '1.26'
 
+    - name: Wait before retrying the Go download
+      if: ${{ steps.setup_go_0.outcome == 'failure' }}
+      run: sleep 30
+
+    - name: Set up Go (retry)
+      if: ${{ steps.setup_go_0.outcome == 'failure' }}
+      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+      with:
+        go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
+        go-version: '1.26'
+
     - name: Set up Go
+      id: setup_go_1
+      continue-on-error: true
       if: ${{ matrix.jobs.goversion != '' && matrix.jobs.goversion != 'custom' }}
+      uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+      with:
+        go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
+        go-version: ${{ matrix.jobs.goversion }}
+
+    - name: Wait before retrying the Go download
+      if: ${{ steps.setup_go_1.outcome == 'failure' }}
+      run: sleep 30
+
+    - name: Set up Go (retry)
+      if: ${{ steps.setup_go_1.outcome == 'failure' }}
       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
       with:
         go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
