@@ -1,0 +1,32 @@
+---
+title: Конфигурация
+description: Где искать полный справочник config.yaml и из каких разделов он состоит.
+---
+
+Полный справочник — файл [`docs/config.yaml`](https://github.com/getmikan/Citrus/blob/main/docs/config.yaml) в репозитории: все ключи с примерами значений. Комментарии в нём пока в основном на китайском, как в upstream.
+
+Формат конфига общий с mihomo, поэтому подходит и [документация mihomo](https://wiki.metacubex.one/) с описанием ключей и API контроллера.
+
+## Разделы
+
+| Ключи | Что настраивают |
+| --- | --- |
+| `mixed-port`, `port`, `socks-port`, `redir-port`, `tproxy-port` | Локальные порты прокси. |
+| `allow-lan`, `bind-address`, `authentication`, `lan-allowed-ips` | Доступ из локальной сети и авторизация. |
+| `mode`, `log-level`, `ipv6`, `find-process-mode` | Общий режим работы. |
+| `external-controller`, `external-ui`, `secret` | API контроллера и веб-интерфейс. |
+| `tun` | TUN-устройство и сетевой стек. |
+| `dns`, `hosts` | DNS-серверы, fake IP, политики для DNS-запросов. |
+| `sniffer` | Определение домена по трафику (TLS, HTTP, QUIC). |
+| `proxies`, `proxy-groups`, `proxy-providers` | Исходящие прокси, группы выбора и удалённые наборы прокси. |
+| `rules`, `sub-rules`, `rule-providers` | Правила маршрутизации и удалённые наборы правил. |
+| `listeners`, `tunnels` | Дополнительные входящие, в том числе серверные протоколы. |
+| `geox-url`, `geo-auto-update` | Откуда и как часто обновлять geodata. |
+
+## Проверка
+
+```bash
+citrus -t -f ~/.config/citrus/config.yaml
+```
+
+Команда разбирает конфиг и выходит, ничего не запуская. Пакетная служба перечитывает конфиг по `systemctl reload citrus`.
