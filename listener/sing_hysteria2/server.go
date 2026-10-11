@@ -213,6 +213,8 @@ func New(config LC.Hysteria2Server, lc C.InboundListenConfig, tunnel C.Tunnel, a
 		MaxConnectionReceiveWindow:     config.MaxConnectionReceiveWindow,
 	}
 
+	masqueradeHandler = authEventHandler(masqueradeHandler, utils.StringToBps(config.Down), config.IgnoreClientBandwidth)
+
 	service, err := hysteria2.NewService[string](hysteria2.ServiceOptions{
 		Context:               context.Background(),
 		Logger:                log.SingLogger,

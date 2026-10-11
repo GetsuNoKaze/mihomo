@@ -11,6 +11,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter/inbound"
 	"github.com/metacubex/mihomo/common/buf"
+	"github.com/metacubex/mihomo/component/authevent"
 	"github.com/metacubex/mihomo/component/ca"
 	"github.com/metacubex/mihomo/component/ech"
 	C "github.com/metacubex/mihomo/constant"
@@ -225,6 +226,7 @@ func (l *Listener) HandleConn(conn net.Conn, h *sing.ListenerHandler) {
 	if user, ok := l.userMap[passwordSha256]; ok {
 		ctx = auth.ContextWithUser(ctx, user)
 	} else {
+		authevent.EmitAddr("anytls", authevent.ReasonWrongCredentials, conn.LocalAddr(), conn.RemoteAddr())
 		return
 	}
 	by, err = b.ReadBytes(2)

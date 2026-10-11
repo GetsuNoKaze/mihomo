@@ -9,6 +9,7 @@ import (
 	"net"
 
 	"github.com/metacubex/mihomo/common/utils"
+	"github.com/metacubex/mihomo/component/authevent"
 	"github.com/metacubex/mihomo/transport/vless"
 	"github.com/metacubex/mihomo/transport/vless/vision"
 
@@ -107,6 +108,7 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, metadata 
 
 	user, loaded := s.userMap[requestUUID]
 	if !loaded {
+		authevent.EmitAddr("vless", authevent.ReasonWrongCredentials, conn.LocalAddr(), conn.RemoteAddr())
 		return E.New("unknown UUID: ", uuid.FromBytesOrNil(requestUUID[:]))
 	}
 	ctx = auth.ContextWithUser(ctx, user)
