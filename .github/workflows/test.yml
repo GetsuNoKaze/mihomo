@@ -30,14 +30,8 @@ jobs:
           - 'ubuntu-24.04-arm' # arm64 linux
           - 'windows-11-arm' # arm64 windows
           - 'macos-26-intel' # amd64 macos
-        go-version:
-          - '1.26'
-          - '1.25'
-          - '1.24'
-          - '1.23'
-          - '1.22'
-          - '1.21'
-          - '1.20'
+        # Pull requests: newest and oldest supported Go only; pushes run them all.
+        go-version: ${{ fromJSON(github.event_name == 'pull_request' && '["1.26","1.20"]' || '["1.26","1.25","1.24","1.23","1.22","1.21","1.20"]') }}
       fail-fast: false
     runs-on: ${{ matrix.os }}
     defaults:
