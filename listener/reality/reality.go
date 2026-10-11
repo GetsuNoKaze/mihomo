@@ -11,6 +11,7 @@ import (
 	"time"
 
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/component/authevent"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/listener/inner"
 	"github.com/metacubex/mihomo/log"
@@ -91,6 +92,7 @@ func (b Builder) NewListener(l net.Listener) net.Listener {
 	return N.NewHandleContextListener(context.Background(), l, func(ctx context.Context, conn net.Conn) (net.Conn, error) {
 		c, err := utls.RealityServer(ctx, conn, b.realityConfig)
 		if err != nil {
+			authevent.EmitAddr("reality", authevent.ReasonRejectedHandshake, conn.LocalAddr(), conn.RemoteAddr())
 			return nil, err
 		}
 		// Due to low implementation quality, the reality server intercepted half-close and caused memory leaks.

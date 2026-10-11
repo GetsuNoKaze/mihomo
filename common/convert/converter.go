@@ -178,9 +178,7 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 				trojan["client-fingerprint"] = fingerprint
 			}
 
-			if pcs := query.Get("pcs"); pcs != "" {
-				trojan["fingerprint"] = pcs
-			}
+			handleTLSShareLinkQuery(query, trojan)
 
 			proxies = append(proxies, trojan)
 

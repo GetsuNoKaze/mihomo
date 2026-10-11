@@ -11,6 +11,7 @@ import (
 	"github.com/metacubex/mihomo/common/atomic"
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/xsync"
+	"github.com/metacubex/mihomo/component/authevent"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/socks5"
 	"github.com/metacubex/mihomo/transport/tuic/types"
@@ -55,6 +56,7 @@ func (s *serverHandler) AuthOk() bool {
 
 func (s *serverHandler) HandleTimeout() {
 	s.authOnce.Do(func() {
+		authevent.EmitAddr("tuic", authevent.ReasonAuthenticationTimeout, s.quicConn.LocalAddr(), s.quicConn.RemoteAddr())
 		_ = s.quicConn.CloseWithError(AuthenticationTimeout, "AuthenticationTimeout")
 		s.authOk.Store(false)
 		close(s.authCh)
@@ -168,6 +170,7 @@ func (s *serverHandler) HandleUniStream(reader *bufio.Reader) (err error) {
 		}
 		s.authOnce.Do(func() {
 			if !authOk {
+				authevent.EmitAddr("tuic", authevent.ReasonWrongCredentials, s.quicConn.LocalAddr(), s.quicConn.RemoteAddr())
 				_ = s.quicConn.CloseWithError(AuthenticationFailed, "AuthenticationFailed")
 			}
 			s.authOk.Store(authOk)

@@ -11,6 +11,7 @@ import (
 	"github.com/metacubex/mihomo/adapter/inbound"
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/utils"
+	"github.com/metacubex/mihomo/component/authevent"
 	"github.com/metacubex/mihomo/component/ca"
 	"github.com/metacubex/mihomo/component/ech"
 	C "github.com/metacubex/mihomo/constant"
@@ -279,6 +280,7 @@ func (l *Listener) HandleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbou
 		additions = append(additions, inbound.WithInUser(user))
 	} else {
 		//log.Warnln("no such key")
+		authevent.EmitAddr("trojan", authevent.ReasonWrongCredentials, conn.LocalAddr(), conn.RemoteAddr())
 		return
 	}
 

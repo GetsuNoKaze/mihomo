@@ -30,7 +30,7 @@ in one YAML configuration.
 | Branch | Role | Automated build |
 | --- | --- | --- |
 | [`main`](https://github.com/getmikan/Citrus/tree/main) | Primary branch | `Prerelease-main` |
-| [`dev`](https://github.com/getmikan/Citrus/tree/dev) | Secondary branch | `Prerelease-dev` |
+| [`dev`](https://github.com/getmikan/Citrus/tree/dev) | Integration branch, all PRs | — (tested, not packaged) |
 
 Build artifacts are available through [GitHub Actions](https://github.com/getmikan/Citrus/actions)
 and published builds through [Releases](https://github.com/getmikan/Citrus/releases).
