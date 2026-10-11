@@ -2650,6 +2650,7 @@ listeners:
     #  masquerade: file:///var/www # 作为文件服务器
     #  masquerade: http://127.0.0.1:8080	#作为反向代理
     #  masquerade: https://127.0.0.1:8080	#作为反向代理
+    #  masquerade-skip-cert-verify: false # https 反向代理默认校验上游证书，仅当上游为自签名证书的本地服务时才显式设为 true (the https upstream is verified by default; set true only for a self-signed local upstream)
     #  realm-opts:
     #    enable: true # 必须手动开启
     #    server-url: https://realm.hy2.io
