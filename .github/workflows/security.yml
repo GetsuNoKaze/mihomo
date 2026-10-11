@@ -26,19 +26,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 2
       - uses: actions/setup-go@v6
         with:
           go-version: stable
       # Only files the PR touches: a few upstream files are not gofmt-ed, and
       # reformatting them would conflict with every upstream sync.
+      # HEAD is the PR's merge commit; its first parent is the current tip of the
+      # base branch, so this is exactly what the PR changes.
       - name: gofmt
         if: github.event_name == 'pull_request'
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          files="$(git diff --name-only --diff-filter=ACMR "$BASE"...HEAD -- '*.go')"
-          [ -z "$files" ] && exit 0
+          files="$(git diff --name-only --diff-filter=ACMR HEAD^1 HEAD -- '*.go')"
+          if [ -z "$files" ]; then exit 0; fi
           out="$(gofmt -l $files)"
           if [ -n "$out" ]; then
             echo "Not gofmt-ed:"; echo "$out"; exit 1
