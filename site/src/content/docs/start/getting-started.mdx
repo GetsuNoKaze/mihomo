@@ -13,9 +13,8 @@ import { Steps } from '@astrojs/starlight/components';
 | --- | --- | --- |
 | release | `vX.Y.Z` ([последний](https://github.com/getmikan/Citrus/releases/latest)) | Стабильные версии. |
 | Prerelease-main | [`Prerelease-main`](https://github.com/getmikan/Citrus/releases/tag/Prerelease-main) | Сборка ветки `main`. |
-| Prerelease-dev | [`Prerelease-dev`](https://github.com/getmikan/Citrus/releases/tag/Prerelease-dev) | Сборка ветки `dev`, самые свежие изменения. |
 
-В пререлизах вместо версии стоят ветка и коммит, например `citrus-linux-arm64-dev-1a2b3c4.gz`.
+В пререлизах вместо версии стоят ветка и коммит, например `citrus-linux-arm64-main-1a2b3c4.gz`. Ветка `dev` проходит тесты, но не собирается в пакеты; чтобы попробовать её, [соберите ядро из исходников](#собрать-из-исходников).
 
 - **Linux, macOS, FreeBSD:** `.gz` с одним бинарником. Для Linux есть ещё `.deb`, `.rpm` и `.pkg.tar.zst`.
 - **Windows:** `.zip` с `citrus-windows-<arch>.exe`.

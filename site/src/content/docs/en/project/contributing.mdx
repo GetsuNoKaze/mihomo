@@ -7,7 +7,7 @@ description: Branches, pull requests, tests and syncing with mihomo.
 
 | Branch | What goes there |
 | --- | --- |
-| `dev` | All pull requests. Builds as `Prerelease-dev`. |
+| `dev` | All pull requests. Tested on every push, not packaged. |
 | `main` | Only merges from `dev`, done by maintainers. Builds as `Prerelease-main` and releases. |
 
 **Open every pull request against `dev`.** A PR against `main` will be asked to change its base. Both branches are protected: no direct pushes and no force pushes.
