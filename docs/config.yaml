@@ -1229,8 +1229,8 @@ proxies: # socks5
     ip: 172.16.0.2
     ipv6: fd01:5ca1:ab1e:80fa:ab85:6eea:213f:f4a5
     public-key: Cr8hWlKvtDt7nrvf+f0brNQQzabAqrjfBvas9pmowjo=
-    #    pre-shared-key: 31aIhAPwktDGpH4JDhA8GNvjFXEf/a6+UaQRyOAiyfM=
-    private-key: eCtXsJZ27+4PbhDkHnB923tkUn2Gj59wZw5wFA75MnU=
+    #    pre-shared-key: YOUR_PRE_SHARED_KEY # base64, 32 字节
+    private-key: YOUR_PRIVATE_KEY # base64 编码的 WireGuard 私钥 (wg genkey)
     udp: true
     reserved: "U4An"
     # 数组格式也是合法的
@@ -1249,7 +1249,7 @@ proxies: # socks5
     #   - server: 162.159.192.1
     #     port: 2480
     #     public-key: Cr8hWlKvtDt7nrvf+f0brNQQzabAqrjfBvas9pmowjo=
-    #     # pre-shared-key: 31aIhAPwktDGpH4JDhA8GNvjFXEf/a6+UaQRyOAiyfM=
+    #     # pre-shared-key: YOUR_PRE_SHARED_KEY # base64, 32 字节
     #     allowed-ips: ['0.0.0.0/0']
     #     reserved: [209,98,59]
     # 如果存在则开启AmneziaWG功能
@@ -1449,7 +1449,7 @@ proxies: # socks5
     type: masque
     server: 162.159.198.1
     port: 443
-    private-key: MHcCAQEEILI1eOtnbEIh89Fj4yNDuFR6UjayCKI3NdLl3DhetimWoAoGCCqGSM49AwEHoUQDQgAEgyXrE8v+hHsHy3ewSb3WcRjYgCrM9T9hiE0Uv6k2DZ1+4kefrDT9v1Q/8wdRigTf6t6gGNUV8W+IUMdrfUt+9g==
+    private-key: YOUR_PRIVATE_KEY # base64 编码的 DER (SEC1) ECDSA P-256 私钥
     public-key: MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIaU7MToJm9NKp8YfGxR6r+/h4mcG7SxI8tsW8OR1A5tv/zCzVbCRRh2t87/kxnP6lAy0lkr7qYwu+ox+k3dr6w==
     ip: 172.16.0.2
     ipv6: 2606:4700:110:84c0:163a:4914:a0ad:3342
@@ -1470,7 +1470,7 @@ proxies: # socks5
     type: masque
     server: 162.159.198.1
     port: 443
-    private-key: MHcCAQEEILI1eOtnbEIh89Fj4yNDuFR6UjayCKI3NdLl3DhetimWoAoGCCqGSM49AwEHoUQDQgAEgyXrE8v+hHsHy3ewSb3WcRjYgCrM9T9hiE0Uv6k2DZ1+4kefrDT9v1Q/8wdRigTf6t6gGNUV8W+IUMdrfUt+9g==
+    private-key: YOUR_PRIVATE_KEY # base64 编码的 DER (SEC1) ECDSA P-256 私钥
     public-key: MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIaU7MToJm9NKp8YfGxR6r+/h4mcG7SxI8tsW8OR1A5tv/zCzVbCRRh2t87/kxnP6lAy0lkr7qYwu+ox+k3dr6w==
     udp: false # 目前 l4proxy 模式不支持 udp
     network: h3-l4proxy
@@ -1486,7 +1486,7 @@ proxies: # socks5
     type: masque
     server: 162.159.198.2
     port: 443
-    private-key: MHcCAQEEILI1eOtnbEIh89Fj4yNDuFR6UjayCKI3NdLl3DhetimWoAoGCCqGSM49AwEHoUQDQgAEgyXrE8v+hHsHy3ewSb3WcRjYgCrM9T9hiE0Uv6k2DZ1+4kefrDT9v1Q/8wdRigTf6t6gGNUV8W+IUMdrfUt+9g==
+    private-key: YOUR_PRIVATE_KEY # base64 编码的 DER (SEC1) ECDSA P-256 私钥
     public-key: MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIaU7MToJm9NKp8YfGxR6r+/h4mcG7SxI8tsW8OR1A5tv/zCzVbCRRh2t87/kxnP6lAy0lkr7qYwu+ox+k3dr6w==
     ip: 172.16.0.2
     ipv6: 2606:4700:110:84c0:163a:4914:a0ad:3342
