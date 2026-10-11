@@ -1199,36 +1199,6 @@ proxies: # socks5
     # certificate: ./client.crt # 证书 PEM 格式，或者 证书的路径
     # private-key: ./client.key # 证书对应的私钥 PEM 格式，或者私钥路径
 
-  #hysteria
-  - name: "hysteria"
-    type: hysteria
-    server: server.com
-    port: 443
-    # ports: 1000,2000-3000,5000 # port 不可省略
-    auth-str: yourpassword
-    # obfs: obfs_str
-    # alpn:
-    #   - h3
-    protocol: udp # 支持 udp/wechat-video/faketcp
-    up: "30 Mbps" # 若不写单位，默认为 Mbps
-    down: "200 Mbps" # 若不写单位，默认为 Mbps
-    # sni: server.com
-    # ech-opts:
-    #   enable: true # 必须手动开启
-    #   # 如果config为空则通过dns解析，不为空则通过该值指定，格式为经过base64编码的ech参数（dig +short TYPE65 tls-ech.dev）
-    #   config: AEn+DQBFKwAgACABWIHUGj4u+PIggYXcR5JF0gYk3dCRioBW8uJq9H4mKAAIAAEAAQABAANAEnB1YmxpYy50bHMtZWNoLmRldgAA
-    #   # query-server-name: xxx.com # 可选项，不为空时用于指定通过dns解析时的域名
-    # skip-cert-verify: false
-    # name-cert-verify: example.com # 仅修改证书 DNSName 校验目标，不修改 SNI
-    # recv-window-conn: 12582912
-    # recv-window: 52428800
-    # disable-mtu-discovery: false
-    # fingerprint: xxxx # 配置指纹将实现 SSL Pining 效果, 可使用 openssl x509 -noout -fingerprint -sha256 -inform pem -in yourcert.pem 获取
-    # 下面两项如果填写则开启 mTLS（需要同时填写）
-    # certificate: ./client.crt # 证书 PEM 格式，或者 证书的路径
-    # private-key: ./client.key # 证书对应的私钥 PEM 格式，或者私钥路径
-    # fast-open: true # 支持 TCP 快速打开，默认为 false
-
   #hysteria2
   - name: "hysteria2"
     type: hysteria2

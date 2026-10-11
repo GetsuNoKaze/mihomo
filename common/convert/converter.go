@@ -34,41 +34,6 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 
 		scheme = strings.ToLower(scheme)
 		switch scheme {
-		case "hysteria":
-			urlHysteria, err := url.Parse(line)
-			if err != nil {
-				continue
-			}
-
-			query := urlHysteria.Query()
-			name := uniqueName(names, urlHysteria.Fragment)
-			hysteria := make(map[string]any, 20)
-
-			hysteria["name"] = name
-			hysteria["type"] = scheme
-			hysteria["server"] = urlHysteria.Hostname()
-			hysteria["port"] = urlHysteria.Port()
-			hysteria["sni"] = query.Get("peer")
-			hysteria["obfs"] = query.Get("obfs")
-			if alpn := query.Get("alpn"); alpn != "" {
-				hysteria["alpn"] = strings.Split(alpn, ",")
-			}
-			hysteria["auth_str"] = query.Get("auth")
-			hysteria["protocol"] = query.Get("protocol")
-			up := query.Get("up")
-			down := query.Get("down")
-			if up == "" {
-				up = query.Get("upmbps")
-			}
-			if down == "" {
-				down = query.Get("downmbps")
-			}
-			hysteria["down"] = down
-			hysteria["up"] = up
-			hysteria["skip-cert-verify"], _ = strconv.ParseBool(query.Get("insecure"))
-
-			proxies = append(proxies, hysteria)
-
 		case "hysteria2", "hy2", "hysteria2+realm", "hy2+realm":
 			realmMode := strings.HasSuffix(scheme, "+realm")
 			hopLine, ports := splitHysteria2Ports(line)

@@ -18,7 +18,7 @@ in one YAML configuration.
 ## Features
 
 - HTTP, HTTPS, SOCKS, mixed, redirect, and TPROXY listeners.
-- VMess, VLESS, Shadowsocks, Trojan, Snell, TUIC, Hysteria, and other outbound protocols.
+- VMess, VLESS, Shadowsocks, Trojan, Snell, TUIC, Hysteria2, and other outbound protocols.
 - TUN networking with a configurable network stack.
 - DNS over HTTPS, TLS, and QUIC, with fake IP and DNS routing rules.
 - Routing by domain, IP range, geodata, process, and logical rule combinations.
