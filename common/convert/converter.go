@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/metacubex/mihomo/log"
+	ssCore "github.com/metacubex/mihomo/transport/shadowsocks/core"
 )
 
 // ConvertsV2Ray convert V2Ray subscribe proxies data to mihomo proxies config
@@ -402,6 +403,10 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 					dcBuf, _ = encRaw.DecodeString(cipherRaw)
 					cipher, password, found = strings.Cut(string(dcBuf), ":")
 				}
+			}
+
+			if ssCore.IsStreamCipher(cipher) {
+				continue // legacy stream ciphers are no longer supported
 			}
 
 			ss := make(map[string]any, 10)

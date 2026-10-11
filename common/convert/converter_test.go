@@ -329,3 +329,14 @@ func TestConvertsV2RayVmessBase64HTTPRemappedToH2Transport(t *testing.T) {
 	_, err = adapter.ParseProxy(proxies[0])
 	assert.NoError(t, err)
 }
+
+func TestConvertsV2Ray_SkipsLegacyLinks(t *testing.T) {
+	ssStream := "ss://" + base64.RawURLEncoding.EncodeToString([]byte("rc4-md5:secret")) + "@1.2.3.4:8388#rc4"
+	ssAEAD := "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:secret")) + "@1.2.3.4:8388#aead"
+	tuicV4 := "tuic://tok3n@1.2.3.4:443#v4"
+	proxies, err := ConvertsV2Ray([]byte(ssStream + "\n" + ssAEAD + "\n" + tuicV4))
+	assert.NoError(t, err)
+	if assert.Len(t, proxies, 1) {
+		assert.Equal(t, "aes-128-gcm", proxies[0]["cipher"])
+	}
+}

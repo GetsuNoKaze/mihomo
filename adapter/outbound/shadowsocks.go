@@ -14,14 +14,20 @@ import (
 	"github.com/metacubex/mihomo/transport/jls"
 	"github.com/metacubex/mihomo/transport/kcptun"
 	"github.com/metacubex/mihomo/transport/restls"
+	ssCore "github.com/metacubex/mihomo/transport/shadowsocks/core"
 	"github.com/metacubex/mihomo/transport/shadowtls"
 	obfs "github.com/metacubex/mihomo/transport/simple-obfs"
 	v2rayObfs "github.com/metacubex/mihomo/transport/v2ray-plugin"
 
-	shadowsocks "github.com/metacubex/sing-shadowsocks2"
+	// The cipher registry is used directly (not the sing-shadowsocks2 root package) so that
+	// the legacy shadowstream ciphers are never registered or linked in.
+	shadowsocks "github.com/metacubex/sing-shadowsocks2/cipher"
+	"github.com/metacubex/sing-shadowsocks2/shadowaead"
+	"github.com/metacubex/sing-shadowsocks2/shadowaead_2022"
 	"github.com/metacubex/sing/common/bufio"
 	M "github.com/metacubex/sing/common/metadata"
 	"github.com/metacubex/sing/common/uot"
+	"golang.org/x/exp/slices"
 )
 
 type ShadowSocks struct {
@@ -300,6 +306,9 @@ func (ss *ShadowSocks) Close() error {
 
 func NewShadowSocks(option ShadowSocksOption) (*ShadowSocks, error) {
 	addr := net.JoinHostPort(option.Server, strconv.Itoa(option.Port))
+	if err := checkShadowsocksCipher(option.Cipher); err != nil {
+		return nil, fmt.Errorf("ss %s cipher: %s initialize error: %w", addr, option.Cipher, err)
+	}
 	method, err := shadowsocks.CreateMethod(option.Cipher, shadowsocks.MethodOptions{
 		Password: option.Password,
 		TimeFunc: ntp.Now,
@@ -522,4 +531,19 @@ func NewShadowSocks(option ShadowSocksOption) (*ShadowSocks, error) {
 	}
 	outbound.dialer = option.NewDialer(outbound.DialOptions())
 	return outbound, nil
+}
+
+// checkShadowsocksCipher allows only "none", AEAD and AEAD-2022 ciphers;
+// legacy stream ciphers get a dedicated error.
+func checkShadowsocksCipher(cipher string) error {
+	switch {
+	case cipher == shadowsocks.MethodNone,
+		slices.Contains(shadowaead.MethodList, cipher),
+		slices.Contains(shadowaead_2022.MethodList, cipher):
+		return nil
+	case ssCore.IsStreamCipher(cipher):
+		return ssCore.ErrStreamCipherRemoved
+	default:
+		return fmt.Errorf("unsupported cipher %q", cipher)
+	}
 }
