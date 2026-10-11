@@ -124,6 +124,41 @@ func TestRealityClientHelloX25519MLKEM768(t *testing.T) {
 	}
 }
 
+// The real post-quantum parrots go out untouched, the classical ones get a key share injected
+// (android and 360 are TLS 1.2 only fingerprints without key_share, unusable for REALITY).
+func TestRealityClientHelloParrots(t *testing.T) {
+	for _, name := range []string{"chrome", "firefox", "safari", "hellofirefox_148", "hellosafari_26_3", "hellochrome_131"} {
+		fingerprint := fingerprints[name]
+		uConn := buildTestRealityHello(t, fingerprint, &RealityConfig{})
+		if uConn.ClientHelloID != fingerprint {
+			t.Errorf("%s: client hello of %v is modified, got %v", name, fingerprint.Str(), uConn.ClientHelloID.Str())
+		}
+	}
+	for _, name := range []string{"ios", "edge", "qq", "firefox120", "safari16", "chrome_pq"} {
+		uConn := buildTestRealityHello(t, fingerprints[name], &RealityConfig{})
+		if uConn.ClientHelloID != utls.HelloCustom {
+			t.Errorf("%s: no X25519MLKEM768 key share is injected", name)
+		}
+	}
+	if fingerprints["firefox"] != utls.HelloFirefox_148 || fingerprints["safari"] != utls.HelloSafari_26_3 {
+		t.Error("firefox and safari are not the post-quantum parrots")
+	}
+	// Firefox 148 reuses the X25519 key of its X25519MLKEM768 key share for the X25519 one
+	hello := buildTestRealityHello(t, utls.HelloFirefox_148, &RealityConfig{}).HandshakeState.Hello
+	var hybrid, x25519 []byte
+	for _, keyShare := range hello.KeyShares {
+		switch keyShare.Group {
+		case utls.X25519MLKEM768:
+			hybrid = keyShare.Data
+		case utls.X25519:
+			x25519 = keyShare.Data
+		}
+	}
+	if len(hybrid) != x25519MLKEM768KeyShareSize || !bytes.Equal(hybrid[mlkem768EncapsulationKeySize:], x25519) {
+		t.Error("Firefox 148 does not reuse its X25519 key")
+	}
+}
+
 func TestRealityClientHelloDisableX25519MLKEM768(t *testing.T) {
 	for _, fingerprint := range []UClientHelloID{utls.HelloChrome_Auto, utls.HelloFirefox_Auto, utls.HelloChrome_120_PQ} {
 		uConn := buildTestRealityHello(t, fingerprint, &RealityConfig{DisableX25519MLKEM768: true})
