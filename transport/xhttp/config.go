@@ -194,7 +194,7 @@ func (c *Config) GetNormalizedUplinkHTTPMethod() string {
 }
 
 func (c *Config) GetNormalizedScStreamUpServerSecs() (Range, error) {
-	r, err := ParseRange(c.ScStreamUpServerSecs, "20-80")
+	r, err := ParseRangeOrDefault(c.ScStreamUpServerSecs, "20-80")
 	if err != nil {
 		return Range{}, fmt.Errorf("invalid sc-stream-up-server-secs: %w", err)
 	}
@@ -202,34 +202,28 @@ func (c *Config) GetNormalizedScStreamUpServerSecs() (Range, error) {
 }
 
 func (c *Config) GetNormalizedScMaxBufferedPosts() (Range, error) {
-	r, err := ParseRange(c.ScMaxBufferedPosts, "30")
+	r, err := ParseRangeOrDefault(c.ScMaxBufferedPosts, "30")
 	if err != nil {
 		return Range{}, fmt.Errorf("invalid sc-max-buffered-posts: %w", err)
-	}
-	if r.Max == 0 {
-		return Range{}, fmt.Errorf("invalid sc-max-buffered-posts: must be greater than zero")
 	}
 	return r, nil
 }
 
 func (c *Config) GetNormalizedScMaxEachPostBytes() (Range, error) {
-	r, err := ParseRange(c.ScMaxEachPostBytes, "1000000")
+	r, err := ParseRangeOrDefault(c.ScMaxEachPostBytes, "1000000")
 	if err != nil {
 		return Range{}, fmt.Errorf("invalid sc-max-each-post-bytes: %w", err)
 	}
-	if r.Max == 0 {
+	if r.Min == 0 { // a zero-sized post would never carry any data
 		return Range{}, fmt.Errorf("invalid sc-max-each-post-bytes: must be greater than zero")
 	}
 	return r, nil
 }
 
 func (c *Config) GetNormalizedScMinPostsIntervalMs() (Range, error) {
-	r, err := ParseRange(c.ScMinPostsIntervalMs, "30")
+	r, err := ParseRangeOrDefault(c.ScMinPostsIntervalMs, "30")
 	if err != nil {
 		return Range{}, fmt.Errorf("invalid sc-min-posts-interval-ms: %w", err)
-	}
-	if r.Max == 0 {
-		return Range{}, fmt.Errorf("invalid sc-min-posts-interval-ms: must be greater than zero")
 	}
 	return r, nil
 }
@@ -329,6 +323,19 @@ func ParseRange(s string, fallback string) (Range, error) {
 		return parseRange(fallback)
 	}
 	return parseRange(s)
+}
+
+// ParseRangeOrDefault is like ParseRange, but also uses fallback when the range is "0" or "0-0".
+// Xray-core treats a range with To == 0 as unset and applies its default in that case.
+func ParseRangeOrDefault(s string, fallback string) (Range, error) {
+	r, err := ParseRange(s, fallback)
+	if err != nil {
+		return Range{}, err
+	}
+	if r.Max == 0 {
+		return parseRange(fallback)
+	}
+	return r, nil
 }
 
 func parseRange(s string) (Range, error) {
