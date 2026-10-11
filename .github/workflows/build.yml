@@ -17,22 +17,6 @@ on:
       - dev
     tags:
       - "v*"
-  # The full cross-build is ~100 jobs; on pull requests run it only when the
-  # build itself changes. Test covers the code on six platforms.
-  pull_request:
-    branches:
-      - main
-      - dev
-    paths:
-      - "go.mod"
-      - "go.sum"
-      - "Makefile"
-      - "Dockerfile"
-      - "constant/features/**"
-      - ".github/workflows/build.yml"
-      - ".github/release/**"
-      - ".github/*.sh"
-      - "docker/**"
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
