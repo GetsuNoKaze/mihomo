@@ -2057,6 +2057,8 @@ listeners:
     #       password: password
     #   handshake:
     #     dest: test.com:443
+    #   # wildcard-sni: off # v3设置项，可选 off / authed / all：authed 时已认证用户按 SNI 握手 (SNI:443)；all 时未认证的连接也按 SNI 回落，
+    #   #                   # 但仅限公网域名 (拒绝 IP、localhost、单标签名等)，且解析结果须全为公网地址 (非回环/内网/链路本地/CGNAT/云元数据)，否则回落到 handshake.dest
     # res-tls:
     #   enable: false # 设置为true时开启
     #   dest: test.com:443
@@ -2122,6 +2124,8 @@ listeners:
     #       password: password
     #   handshake:
     #     dest: test.com:443
+    #   # wildcard-sni: off # v3设置项，可选 off / authed / all：authed 时已认证用户按 SNI 握手 (SNI:443)；all 时未认证的连接也按 SNI 回落，
+    #   #                   # 但仅限公网域名 (拒绝 IP、localhost、单标签名等)，且解析结果须全为公网地址 (非回环/内网/链路本地/CGNAT/云元数据)，否则回落到 handshake.dest
     # res-tls:
     #   enable: false
     #   dest: test.com:443
@@ -2211,6 +2215,8 @@ listeners:
     #       password: shadow-tls-password
     #   handshake:
     #     dest: www.example.com:443
+    #   # wildcard-sni: off # v3设置项，可选 off / authed / all：authed 时已认证用户按 SNI 握手 (SNI:443)；all 时未认证的连接也按 SNI 回落，
+    #   #                   # 但仅限公网域名 (拒绝 IP、localhost、单标签名等)，且解析结果须全为公网地址 (非回环/内网/链路本地/CGNAT/云元数据)，否则回落到 handshake.dest
     #     # proxy: ""
     # res-tls:
     #   enable: true
@@ -2431,6 +2437,8 @@ listeners:
     #       password: shadow-tls-password
     #   handshake:
     #     dest: www.example.com:443
+    #   # wildcard-sni: off # v3设置项，可选 off / authed / all：authed 时已认证用户按 SNI 握手 (SNI:443)；all 时未认证的连接也按 SNI 回落，
+    #   #                   # 但仅限公网域名 (拒绝 IP、localhost、单标签名等)，且解析结果须全为公网地址 (非回环/内网/链路本地/CGNAT/云元数据)，否则回落到 handshake.dest
     #     # proxy: ""
     # res-tls:
     #   enable: true
@@ -2473,6 +2481,8 @@ listeners:
     #       password: shadow-tls-password
     #   handshake:
     #     dest: www.example.com:443
+    #   # wildcard-sni: off # v3设置项，可选 off / authed / all：authed 时已认证用户按 SNI 握手 (SNI:443)；all 时未认证的连接也按 SNI 回落，
+    #   #                   # 但仅限公网域名 (拒绝 IP、localhost、单标签名等)，且解析结果须全为公网地址 (非回环/内网/链路本地/CGNAT/云元数据)，否则回落到 handshake.dest
     #     # proxy: ""
     # res-tls:
     #   enable: true
@@ -2568,6 +2578,8 @@ listeners:
     #       password: shadow-tls-password
     #   handshake:
     #     dest: www.example.com:443
+    #   # wildcard-sni: off # v3设置项，可选 off / authed / all：authed 时已认证用户按 SNI 握手 (SNI:443)；all 时未认证的连接也按 SNI 回落，
+    #   #                   # 但仅限公网域名 (拒绝 IP、localhost、单标签名等)，且解析结果须全为公网地址 (非回环/内网/链路本地/CGNAT/云元数据)，否则回落到 handshake.dest
     #     # proxy: ""
     # res-tls:
     #   enable: true
