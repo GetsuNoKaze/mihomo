@@ -14,6 +14,7 @@ import (
 
 	"github.com/metacubex/http"
 	D "github.com/miekg/dns"
+	"github.com/stretchr/testify/assert"
 )
 
 func newTestDoH(t *testing.T, handler stdhttp.HandlerFunc) (*dnsOverHTTPS, *http.Client) {
@@ -24,7 +25,7 @@ func newTestDoH(t *testing.T, handler stdhttp.HandlerFunc) (*dnsOverHTTPS, *http
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &dnsOverHTTPS{url: u}, &http.Client{}
+	return &dnsOverHTTPS{url: u, addr: u.Redacted()}, &http.Client{}
 }
 
 func TestDoHResponseSizeLimit(t *testing.T) {
@@ -95,4 +96,26 @@ func TestDoHValidResponse(t *testing.T) {
 	if resp.Id != req.Id {
 		t.Fatalf("id mismatch: %d != %d", resp.Id, req.Id)
 	}
+}
+
+func TestDoHAddressRedactsUserinfo(t *testing.T) {
+	client := newDoHClient("https://user:s3cret@dns.example.com:443/dns-query", nil, false, map[string]string{}, nil, "")
+	doh := client.(*dnsOverHTTPS)
+	defer doh.Close()
+
+	assert.NotContains(t, doh.Address(), "s3cret")
+	assert.Equal(t, "https://user:xxxxx@dns.example.com:443/dns-query", doh.Address())
+
+	// the request itself still carries the credentials
+	password, ok := doh.url.User.Password()
+	assert.True(t, ok)
+	assert.Equal(t, "s3cret", password)
+}
+
+func TestDoHAddressWithoutUserinfo(t *testing.T) {
+	client := newDoHClient("https://dns.example.com/dns-query", nil, false, map[string]string{}, nil, "")
+	doh := client.(*dnsOverHTTPS)
+	defer doh.Close()
+
+	assert.Equal(t, "https://dns.example.com/dns-query", doh.Address())
 }

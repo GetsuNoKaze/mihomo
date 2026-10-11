@@ -89,7 +89,7 @@ func newDoHClient(urlString string, r resolver.Resolver, preferH3 bool, params m
 
 	doh := &dnsOverHTTPS{
 		url:    u,
-		addr:   u.String(),
+		addr:   u.Redacted(), // for logs and errors; the request uses url
 		dialer: newDNSDialer(r, proxyAdapter, proxyName),
 		quicConfig: &quic.Config{
 			KeepAlivePeriod: QUICKeepAlivePeriod,
@@ -225,14 +225,14 @@ func (doh *dnsOverHTTPS) exchangeHTTPS(ctx context.Context, client *http.Client,
 	requestUrl.RawQuery = fmt.Sprintf("dns=%s", base64.RawURLEncoding.EncodeToString(buf))
 	httpReq, err := http.NewRequestWithContext(ctx, method, requestUrl.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating http request to %s: %w", doh.url, err)
+		return nil, fmt.Errorf("creating http request to %s: %w", doh.addr, err)
 	}
 
 	httpReq.Header.Set("Accept", "application/dns-message")
 	httpReq.Header.Set("User-Agent", "")
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("requesting %s: %w", doh.url, err)
+		return nil, fmt.Errorf("requesting %s: %w", doh.addr, err)
 	}
 	defer httpResp.Body.Close()
 
@@ -242,13 +242,13 @@ func (doh *dnsOverHTTPS) exchangeHTTPS(ctx context.Context, client *http.Client,
 				"expected status %d, got %d from %s",
 				http.StatusOK,
 				httpResp.StatusCode,
-				doh.url,
+				doh.addr,
 			)
 	}
 
 	body, err := utils.ReadAllLimit(httpResp.Body, maxDoHResponseSize)
 	if err != nil {
-		return nil, fmt.Errorf("reading %s: response %w", doh.url, err)
+		return nil, fmt.Errorf("reading %s: response %w", doh.addr, err)
 	}
 
 	resp = &D.Msg{}
@@ -256,7 +256,7 @@ func (doh *dnsOverHTTPS) exchangeHTTPS(ctx context.Context, client *http.Client,
 	if err != nil {
 		return nil, fmt.Errorf(
 			"unpacking response from %s: body is %d bytes: %w",
-			doh.url,
+			doh.addr,
 			len(body),
 			err,
 		)
@@ -369,7 +369,7 @@ func (doh *dnsOverHTTPS) getClient(ctx context.Context) (c *http.Client, isCache
 func (doh *dnsOverHTTPS) createClient(ctx context.Context) (*http.Client, error) {
 	transport, err := doh.createTransport(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("[%s] initializing http transport: %w", doh.url.String(), err)
+		return nil, fmt.Errorf("[%s] initializing http transport: %w", doh.addr, err)
 	}
 
 	client := &http.Client{
@@ -431,12 +431,12 @@ func (doh *dnsOverHTTPS) createTransport(ctx context.Context) (t http.RoundTripp
 		// upstream.
 		transportH3, err := doh.createTransportH3(ctx, tlsConfig)
 		if err == nil {
-			log.Debugln("[%s] using HTTP/3 for this upstream: QUIC was faster", doh.url.String())
+			log.Debugln("[%s] using HTTP/3 for this upstream: QUIC was faster", doh.addr)
 			return transportH3, nil
 		}
 	}
 
-	log.Debugln("[%s] using HTTP/2 for this upstream: %v", doh.url.String(), err)
+	log.Debugln("[%s] using HTTP/2 for this upstream: %v", doh.addr, err)
 
 	if !doh.supportsHTTP() {
 		return nil, errors.New("HTTP1/1 and HTTP2 are not supported by this upstream")

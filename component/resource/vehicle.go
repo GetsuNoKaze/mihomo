@@ -27,8 +27,8 @@ const (
 	// explicit size-limit, or opt out entirely with size-limit: -1.
 	DefaultSizeLimit int64 = 64 << 20
 
-	fileMode os.FileMode = 0o666
-	dirMode  os.FileMode = 0o755
+	fileMode os.FileMode = 0o600
+	dirMode  os.FileMode = 0o700
 )
 
 var (
