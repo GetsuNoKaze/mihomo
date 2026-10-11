@@ -2,6 +2,7 @@ package convert_test
 
 import (
 	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/metacubex/mihomo/adapter"
@@ -334,7 +335,8 @@ func TestConvertsV2Ray_SkipsLegacyLinks(t *testing.T) {
 	ssStream := "ss://" + base64.RawURLEncoding.EncodeToString([]byte("rc4-md5:secret")) + "@1.2.3.4:8388#rc4"
 	ssAEAD := "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:secret")) + "@1.2.3.4:8388#aead"
 	tuicV4 := "tuic://tok3n@1.2.3.4:443#v4"
-	proxies, err := ConvertsV2Ray([]byte(ssStream + "\n" + ssAEAD + "\n" + tuicV4))
+	ssV2rayPlugin := "ss://" + base64.RawURLEncoding.EncodeToString([]byte("aes-128-gcm:secret")) + "@1.2.3.4:8388/?plugin=v2ray-plugin%3Bmode%3Dwebsocket#v2ray"
+	proxies, err := ConvertsV2Ray([]byte(strings.Join([]string{ssStream, ssAEAD, tuicV4, ssV2rayPlugin}, "\n")))
 	assert.NoError(t, err)
 	if assert.Len(t, proxies, 1) {
 		assert.Equal(t, "aes-128-gcm", proxies[0]["cipher"])

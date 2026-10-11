@@ -202,44 +202,6 @@ func TestMihomo_ShadowsocksObfsTLS(t *testing.T) {
 	testSuit(t, proxy)
 }
 
-func TestMihomo_ShadowsocksV2RayPlugin(t *testing.T) {
-	cfg := &container.Config{
-		Image: ImageShadowsocks,
-		Env: []string{
-			"SS_MODULE=ss-server",
-			"SS_CONFIG=-s 0.0.0.0 -u -p 10002 -m chacha20-ietf-poly1305 -k FzcLbKs2dY9mhL --plugin v2ray-plugin --plugin-opts=server",
-		},
-		ExposedPorts: defaultExposedPorts,
-	}
-	hostCfg := &container.HostConfig{
-		PortBindings: defaultPortBindings,
-	}
-
-	id, err := startContainer(cfg, hostCfg, "ss-v2ray-plugin")
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		cleanContainer(id)
-	})
-
-	proxy, err := outbound.NewShadowSocks(outbound.ShadowSocksOption{
-		Name:     "ss",
-		Server:   localIP.String(),
-		Port:     10002,
-		Password: "FzcLbKs2dY9mhL",
-		Cipher:   "chacha20-ietf-poly1305",
-		UDP:      true,
-		Plugin:   "v2ray-plugin",
-		PluginOpts: map[string]any{
-			"mode": "websocket",
-		},
-	})
-	require.NoError(t, err)
-
-	time.Sleep(waitTime)
-	testSuit(t, proxy)
-}
-
 func Benchmark_Shadowsocks(b *testing.B) {
 	cfg := &container.Config{
 		Image:        ImageShadowsocksRust,

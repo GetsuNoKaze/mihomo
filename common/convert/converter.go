@@ -433,21 +433,7 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 						"host": pluginInfo.Get("obfs-host"),
 					}
 				} else if strings.Contains(pluginName, "v2ray-plugin") {
-					mode := pluginInfo.Get("mode")
-					if mode == "" {
-						mode = pluginInfo.Get("obfs")
-					}
-					host := pluginInfo.Get("host")
-					if host == "" {
-						host = pluginInfo.Get("obfs-host")
-					}
-					ss["plugin"] = "v2ray-plugin"
-					ss["plugin-opts"] = map[string]any{
-						"mode": mode,
-						"host": host,
-						"path": pluginInfo.Get("path"),
-						"tls":  strings.Contains(plugin, "tls"),
-					}
+					continue // v2ray-plugin is no longer supported
 				}
 			}
 
