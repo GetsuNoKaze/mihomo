@@ -24,11 +24,9 @@ import (
 )
 
 const (
-	baseReleaseURL    = "https://github.com/MetaCubeX/mihomo/releases/latest/download/"
-	versionReleaseURL = "https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt"
-
-	baseAlphaURL    = "https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/"
-	versionAlphaURL = "https://github.com/MetaCubeX/mihomo/releases/download/Prerelease-Alpha/version.txt"
+	baseReleaseURL = "https://github.com/getmikan/Citrus/releases/latest/download/"
+	baseMainURL    = "https://github.com/getmikan/Citrus/releases/download/Prerelease-main/"
+	baseDevURL     = "https://github.com/getmikan/Citrus/releases/download/Prerelease-dev/"
 
 	// MaxPackageFileSize is a maximum package file length in bytes. The largest
 	// package whose size is limited by this constant currently has the size of
@@ -39,9 +37,11 @@ const (
 const (
 	ReleaseChannel = "release"
 	AlphaChannel   = "alpha"
+	MainChannel    = "main"
+	DevChannel     = "dev"
 )
 
-// CoreUpdater is the mihomo updater.
+// CoreUpdater is the citrus updater.
 // modify from https://github.com/AdguardTeam/AdGuardHome/blob/595484e0b3fb4c457f9bb727a6b94faa78a66c5f/internal/updater/updater.go
 type CoreUpdater struct {
 	mu sync.Mutex
@@ -49,34 +49,59 @@ type CoreUpdater struct {
 
 var DefaultCoreUpdater = CoreUpdater{}
 
+func coreChannelURLs(channel, version string) (baseURL, versionURL string, err error) {
+	channel = strings.ToLower(channel)
+	if channel == "" || channel == "auto" {
+		switch {
+		case version == "main", strings.HasPrefix(version, "main-"), strings.HasPrefix(version, "alpha-"):
+			channel = MainChannel
+		case version == "dev", strings.HasPrefix(version, "dev-"):
+			channel = DevChannel
+		default:
+			channel = ReleaseChannel
+		}
+	}
+	switch channel {
+	case MainChannel, AlphaChannel:
+		baseURL = baseMainURL
+	case DevChannel:
+		baseURL = baseDevURL
+	case ReleaseChannel:
+		baseURL = baseReleaseURL
+	default:
+		return "", "", fmt.Errorf("update error: unsupported channel %q", channel)
+	}
+	return baseURL, baseURL + "version.txt", nil
+}
+
 func (u *CoreUpdater) CoreBaseName() string {
 	switch runtime.GOARCH {
 	case "arm":
-		// mihomo-linux-armv5
-		return fmt.Sprintf("mihomo-%s-%sv%s", runtime.GOOS, runtime.GOARCH, features.GOARM)
+		// citrus-linux-armv5
+		return fmt.Sprintf("citrus-%s-%sv%s", runtime.GOOS, runtime.GOARCH, features.GOARM)
 	case "arm64":
 		if runtime.GOOS == "android" {
-			// mihomo-android-arm64-v8
-			return fmt.Sprintf("mihomo-%s-%s-v8", runtime.GOOS, runtime.GOARCH)
+			// citrus-android-arm64-v8
+			return fmt.Sprintf("citrus-%s-%s-v8", runtime.GOOS, runtime.GOARCH)
 		}
-		// mihomo-linux-arm64
-		return fmt.Sprintf("mihomo-%s-%s", runtime.GOOS, runtime.GOARCH)
+		// citrus-linux-arm64
+		return fmt.Sprintf("citrus-%s-%s", runtime.GOOS, runtime.GOARCH)
 	case "mips", "mipsle":
-		// mihomo-linux-mips-hardfloat
-		return fmt.Sprintf("mihomo-%s-%s-%s", runtime.GOOS, runtime.GOARCH, features.GOMIPS)
+		// citrus-linux-mips-hardfloat
+		return fmt.Sprintf("citrus-%s-%s-%s", runtime.GOOS, runtime.GOARCH, features.GOMIPS)
 	case "amd64":
 		if runtime.GOOS == "android" {
-			// mihomo-android-amd64
-			return fmt.Sprintf("mihomo-%s-%s", runtime.GOOS, runtime.GOARCH)
+			// citrus-android-amd64
+			return fmt.Sprintf("citrus-%s-%s", runtime.GOOS, runtime.GOARCH)
 		}
-		// mihomo-linux-amd64-v1
-		return fmt.Sprintf("mihomo-%s-%s-%s", runtime.GOOS, runtime.GOARCH, features.GOAMD64)
+		// citrus-linux-amd64-v1
+		return fmt.Sprintf("citrus-%s-%s-%s", runtime.GOOS, runtime.GOARCH, features.GOAMD64)
 	default:
-		// mihomo-linux-386
-		// mihomo-linux-mips64
-		// mihomo-linux-riscv64
-		// mihomo-linux-s390x
-		return fmt.Sprintf("mihomo-%s-%s", runtime.GOOS, runtime.GOARCH)
+		// citrus-linux-386
+		// citrus-linux-mips64
+		// citrus-linux-riscv64
+		// citrus-linux-s390x
+		return fmt.Sprintf("citrus-%s-%s", runtime.GOOS, runtime.GOARCH)
 	}
 }
 
@@ -89,19 +114,9 @@ func (u *CoreUpdater) Update(currentExePath string, channel string, force bool) 
 		return fmt.Errorf("check currentExePath %q: %w", currentExePath, err)
 	}
 
-	baseURL := baseAlphaURL
-	versionURL := versionAlphaURL
-	switch strings.ToLower(channel) {
-	case ReleaseChannel:
-		baseURL = baseReleaseURL
-		versionURL = versionReleaseURL
-	case AlphaChannel:
-		break
-	default: // auto
-		if !strings.HasPrefix(C.Version, "alpha") {
-			baseURL = baseReleaseURL
-			versionURL = versionReleaseURL
-		}
+	baseURL, versionURL, err := coreChannelURLs(channel, C.Version)
+	if err != nil {
+		return err
 	}
 
 	latestVersion, err := u.getLatestVersion(versionURL)
@@ -135,10 +150,9 @@ func (u *CoreUpdater) Update(currentExePath string, channel string, force bool) 
 	log.Infoln("updater: updating using url: %s", packageURL)
 
 	workDir := filepath.Dir(currentExePath)
-	backupDir := filepath.Join(workDir, "meta-backup")
-	updateDir := filepath.Join(workDir, "meta-update")
+	backupDir := filepath.Join(workDir, "citrus-backup")
+	updateDir := filepath.Join(workDir, "citrus-update")
 	packagePath := filepath.Join(updateDir, packageName)
-	//log.Infoln(packagePath)
 
 	updateExeName := mihomoBaseName
 	if runtime.GOOS == "windows" {
