@@ -84,10 +84,14 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			// A temporary unofficial TUIC share link standard
 			// Modified from https://github.com/daeuniverse/dae/discussions/182
 			// Changes:
-			//   1. Support TUICv4, just replace uuid:password with token
-			//   2. Remove `allow_insecure` field
+			//   1. Remove `allow_insecure` field
+			// Only TUIC v5 (uuid:password) is supported; v4 token-only links are skipped.
 			urlTUIC, err := url.Parse(line)
 			if err != nil {
+				continue
+			}
+			password, v5 := urlTUIC.User.Password()
+			if !v5 {
 				continue
 			}
 			query := urlTUIC.Query()
@@ -98,13 +102,8 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			tuic["server"] = urlTUIC.Hostname()
 			tuic["port"] = urlTUIC.Port()
 			tuic["udp"] = true
-			password, v5 := urlTUIC.User.Password()
-			if v5 {
-				tuic["uuid"] = urlTUIC.User.Username()
-				tuic["password"] = password
-			} else {
-				tuic["token"] = urlTUIC.User.Username()
-			}
+			tuic["uuid"] = urlTUIC.User.Username()
+			tuic["password"] = password
 			if cc := query.Get("congestion_control"); cc != "" {
 				tuic["congestion-controller"] = cc
 			}

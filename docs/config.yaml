@@ -1535,9 +1535,7 @@ proxies: # socks5
     server: www.example.com
     port: 10443
     type: tuic
-    # tuicV4 必须填写 token（不可同时填写 uuid 和 password）
-    token: TOKEN
-    # tuicV5 必须填写 uuid 和 password（不可同时填写 token）
+    # 必须填写 uuid 和 password（仅支持 TUIC v5，v4 的 token 已不再支持）
     uuid: 00000000-0000-0000-0000-000000000001
     password: PASSWORD_1
     # ip: 127.0.0.1 # for overwriting the DNS lookup result of the server address set in option 'server'
@@ -1545,7 +1543,6 @@ proxies: # socks5
     # alpn: [h3]
     disable-sni: true
     reduce-rtt: true
-    request-timeout: 8000
     udp-relay-mode: native # Available: "native", "quic". Default: "native"
     # congestion-controller: bbr # Available: "cubic", "new_reno", "bbr". Default: "cubic"
     # cwnd: 10 # default: 32
@@ -2291,9 +2288,7 @@ listeners:
     # routing-mark: 0 # 为监听socket设置routing-mark（仅支持linux）
     # rule: sub-rule-name1 # 默认使用 rules，如果未找到 sub-rule 则直接使用 rules
     # proxy: proxy # 如果不为空则直接将该入站流量交由指定 proxy 处理 (当 proxy 不为空时，这里的 proxy 名称必须合法，否则会出错)
-    # token:    # tuicV4 填写（可以同时填写 users）
-    #   - TOKEN
-    # users:    # tuicV5 填写（可以同时填写 token）
+    # users:    # 仅支持 TUIC v5（v4 的 token 已不再支持）
     #   00000000-0000-0000-0000-000000000000: PASSWORD_0
     #   00000000-0000-0000-0000-000000000001: PASSWORD_1
     #  certificate: ./server.crt # 证书 PEM 格式，或者 证书的路径
@@ -2800,9 +2795,7 @@ listeners:
 # tuic-server:
 #  enable: true
 #  listen: 127.0.0.1:10443
-#  token:    # tuicV4 填写（可以同时填写 users）
-#    - TOKEN
-#  users:    # tuicV5 填写（可以同时填写 token）
+#  users:    # 仅支持 TUIC v5（v4 的 token 已不再支持）
 #    00000000-0000-0000-0000-000000000000: PASSWORD_0
 #    00000000-0000-0000-0000-000000000001: PASSWORD_1
 #  certificate: ./server.crt
