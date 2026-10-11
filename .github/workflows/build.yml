@@ -10,6 +10,8 @@ on:
       - "docs/**"
       - "README.md"
       - ".github/ISSUE_TEMPLATE/**"
+      - "site/**"
+      - ".github/workflows/pages.yml"
     branches:
       - main
       - dev
