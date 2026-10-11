@@ -537,6 +537,9 @@ func (c *Config) FillPacketRequest(request *http.Request, sessionId string, seqS
 		request.Header = c.GetRequestHeader()
 		request.Body = io.NopCloser(bytes.NewReader(data))
 		request.ContentLength = int64(len(data))
+		request.GetBody = func() (io.ReadCloser, error) { // allow the transport to retry it (e.g. after a GOAWAY), like Xray-core
+			return io.NopCloser(bytes.NewReader(data)), nil
+		}
 	} else {
 		request.Body = nil
 		request.ContentLength = 0
