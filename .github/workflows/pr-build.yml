@@ -17,12 +17,8 @@ concurrency:
 
 jobs:
   cross-build:
-    name: cross-build (Go ${{ matrix.go }})
+    name: cross-build
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        go: ['1.26', '1.20']
     env:
       CGO_ENABLED: 0
       GOTOOLCHAIN: local
@@ -35,7 +31,7 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
           go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
-          go-version: ${{ matrix.go }}
+          go-version: '1.26'
 
       - name: Wait before retrying the Go download
         if: ${{ steps.setup_go.outcome == 'failure' }}
@@ -46,7 +42,7 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
           go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
-          go-version: ${{ matrix.go }}
+          go-version: '1.26'
 
       - name: Build
         run: |

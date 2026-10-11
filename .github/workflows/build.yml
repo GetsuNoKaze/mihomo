@@ -12,9 +12,9 @@ on:
       - ".github/ISSUE_TEMPLATE/**"
       - "site/**"
       - ".github/workflows/pages.yml"
+    # Release builds only: main, tags and manual runs. dev is checked by Test and PR Build.
     branches:
       - main
-      - dev
     tags:
       - "v*"
 concurrency:

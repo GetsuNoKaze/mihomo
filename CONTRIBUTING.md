@@ -7,7 +7,7 @@ Citrus is the network core of [Mikan](https://github.com/getmikan), a fork of
 
 | Branch | What goes there |
 | --- | --- |
-| `dev` | All pull requests. Builds as `Prerelease-dev`. |
+| `dev` | All pull requests. Tested on every push, not packaged. |
 | `main` | Only merges from `dev`, done by maintainers. Builds as `Prerelease-main` and releases. |
 
 **Open every pull request against `dev`.** A PR against `main` will be asked to
@@ -28,8 +28,9 @@ pushes, and `main` needs an approving review.
    gofmt -l <the files you changed>
    ```
 
-5. CI must be green: Test, Build and Security (gofmt on changed files, vet,
-   `go mod tidy`, CodeQL, govulncheck, dependency review).
+5. CI must be green: Test (Linux and Windows), PR Build (cross-compile) and
+   Security (gofmt on changed files, vet, `go mod tidy`, govulncheck,
+   dependency review). The full release build runs on `main` and tags.
 
 ## Upstream
 

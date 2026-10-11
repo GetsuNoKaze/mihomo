@@ -79,8 +79,7 @@ export const strings = {
 			channels: [
 				['release', 'Последний тег vX.Y.Z', 'Стабильные версии.'],
 				['Prerelease-main', 'Ветка main', 'Сборка с каждого слияния в main.'],
-				['Prerelease-dev', 'Ветка dev', 'Самые свежие изменения, сюда приходят все PR.'],
-			],
+							],
 			arch: 'Файл amd64 собран под x86-64-v3 (Intel Haswell, AMD Excavator и новее); для старых берите amd64-compatible (v1) или amd64-v2. Есть также arm64, armv5–v7, 386, mips, riscv64, loong64, s390x и другие.',
 			button: 'Все релизы',
 			docs: 'Как запустить',
@@ -170,8 +169,7 @@ export const strings = {
 			channels: [
 				['release', 'The latest vX.Y.Z tag', 'Stable versions.'],
 				['Prerelease-main', 'The main branch', 'A build of every merge into main.'],
-				['Prerelease-dev', 'The dev branch', 'The newest changes; every PR lands here.'],
-			],
+							],
 			arch: 'The amd64 file targets x86-64-v3 (Intel Haswell, AMD Excavator and newer); for older ones take amd64-compatible (v1) or amd64-v2. There are also arm64, armv5–v7, 386, mips, riscv64, loong64, s390x and more.',
 			button: 'All releases',
 			docs: 'How to run it',

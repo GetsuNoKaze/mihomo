@@ -72,8 +72,10 @@ jobs:
           sarif_file: govulncheck.sarif
           category: govulncheck
 
+  # CodeQL takes ~20 minutes: pushes to dev/main and the weekly run, not every PR.
   codeql:
     name: CodeQL
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
