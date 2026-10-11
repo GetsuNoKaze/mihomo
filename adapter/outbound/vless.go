@@ -127,22 +127,6 @@ type XHTTPReuseSettings struct {
 	HKeepAlivePeriod int    `proxy:"h-keep-alive-period,omitempty"`
 }
 
-// build converts the settings to the xhttp reuse config and the keep-alive period.
-// Like Xray-core, nil or empty settings mean the default XMUX, so connections are shared
-// instead of dialing a new one for every proxied connection.
-func (s *XHTTPReuseSettings) build() (*xhttp.ReuseConfig, time.Duration) {
-	if s == nil || *s == (XHTTPReuseSettings{}) {
-		return xhttp.DefaultReuseConfig(), 0
-	}
-	return &xhttp.ReuseConfig{
-		MaxConcurrency:   s.MaxConcurrency,
-		MaxConnections:   s.MaxConnections,
-		CMaxReuseTimes:   s.CMaxReuseTimes,
-		HMaxRequestTimes: s.HMaxRequestTimes,
-		HMaxReusableSecs: s.HMaxReusableSecs,
-	}, time.Duration(s.HKeepAlivePeriod) * time.Second
-}
-
 type XHTTPDownloadSettings struct {
 	// xhttp part
 	Path          *string             `proxy:"path,omitempty"`
@@ -640,7 +624,19 @@ func NewVless(option VlessOption) (*Vless, error) {
 			}
 		}
 
-		reuseCfg, hKeepAlivePeriod := option.XHTTPOpts.ReuseSettings.build()
+		var hKeepAlivePeriod time.Duration
+
+		var reuseCfg *xhttp.ReuseConfig
+		if option.XHTTPOpts.ReuseSettings != nil {
+			reuseCfg = &xhttp.ReuseConfig{
+				MaxConcurrency:   option.XHTTPOpts.ReuseSettings.MaxConcurrency,
+				MaxConnections:   option.XHTTPOpts.ReuseSettings.MaxConnections,
+				CMaxReuseTimes:   option.XHTTPOpts.ReuseSettings.CMaxReuseTimes,
+				HMaxRequestTimes: option.XHTTPOpts.ReuseSettings.HMaxRequestTimes,
+				HMaxReusableSecs: option.XHTTPOpts.ReuseSettings.HMaxReusableSecs,
+			}
+			hKeepAlivePeriod = time.Duration(option.XHTTPOpts.ReuseSettings.HKeepAlivePeriod) * time.Second
+		}
 
 		cfg := &xhttp.Config{
 			Host:                 requestHost,
@@ -818,7 +814,14 @@ func NewVless(option VlessOption) (*Vless, error) {
 			downloadCfg.Headers = lo.FromPtrOr(ds.Headers, v.option.XHTTPOpts.Headers)
 
 			if ds.ReuseSettings != nil {
-				downloadCfg.ReuseConfig, downloadHKeepAlivePeriod = ds.ReuseSettings.build()
+				downloadCfg.ReuseConfig = &xhttp.ReuseConfig{
+					MaxConcurrency:   ds.ReuseSettings.MaxConcurrency,
+					MaxConnections:   ds.ReuseSettings.MaxConnections,
+					CMaxReuseTimes:   ds.ReuseSettings.CMaxReuseTimes,
+					HMaxRequestTimes: ds.ReuseSettings.HMaxRequestTimes,
+					HMaxReusableSecs: ds.ReuseSettings.HMaxReusableSecs,
+				}
+				downloadHKeepAlivePeriod = time.Duration(ds.ReuseSettings.HKeepAlivePeriod) * time.Second
 			}
 
 			cfg.DownloadConfig = &downloadCfg
