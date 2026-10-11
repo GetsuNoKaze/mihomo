@@ -1,0 +1,32 @@
+---
+title: Configuration
+description: Where to find the full config.yaml reference and what sections it has.
+---
+
+The full reference is [`docs/config.yaml`](https://github.com/getmikan/Citrus/blob/main/docs/config.yaml) in the repository: every key with example values. Its comments are still mostly in Chinese, as upstream.
+
+The config format is shared with mihomo, so the [mihomo documentation](https://wiki.metacubex.one/) on keys and the controller API applies too.
+
+## Sections
+
+| Keys | What they set |
+| --- | --- |
+| `mixed-port`, `port`, `socks-port`, `redir-port`, `tproxy-port` | Local proxy ports. |
+| `allow-lan`, `bind-address`, `authentication`, `lan-allowed-ips` | LAN access and authentication. |
+| `mode`, `log-level`, `ipv6`, `find-process-mode` | General behaviour. |
+| `external-controller`, `external-ui`, `secret` | The controller API and web UI. |
+| `tun` | The TUN device and network stack. |
+| `dns`, `hosts` | DNS servers, fake IP, policies for DNS queries. |
+| `sniffer` | Domain detection from traffic (TLS, HTTP, QUIC). |
+| `proxies`, `proxy-groups`, `proxy-providers` | Outbound proxies, selection groups and remote proxy sets. |
+| `rules`, `sub-rules`, `rule-providers` | Routing rules and remote rule sets. |
+| `listeners`, `tunnels` | Extra inbounds, including server protocols. |
+| `geox-url`, `geo-auto-update` | Where and how often to update geodata. |
+
+## Testing
+
+```bash
+citrus -t -f ~/.config/citrus/config.yaml
+```
+
+The command parses the config and exits without starting anything. The packaged service re-reads the config on `systemctl reload citrus`.
