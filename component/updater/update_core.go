@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/component/ca"
 	mihomoHttp "github.com/metacubex/mihomo/component/http"
 	C "github.com/metacubex/mihomo/constant"
@@ -32,6 +33,15 @@ const (
 	// package whose size is limited by this constant currently has the size of
 	// approximately 32 MiB.
 	MaxPackageFileSize = 32 * 1024 * 1024
+
+	// MaxUnpackedFileSize caps the binary extracted from a package. Citrus
+	// binaries are 30-60 MiB uncompressed; the margin keeps future growth safe
+	// while a crafted package can no longer expand without bound on disk.
+	MaxUnpackedFileSize = 256 * 1024 * 1024
+
+	// maxVersionFileSize caps the version.txt response, which holds a single
+	// short version string.
+	maxVersionFileSize = 64 * 1024
 )
 
 const (
@@ -201,9 +211,9 @@ func (u *CoreUpdater) getLatestVersion(versionURL string) (version string, err e
 		}
 	}()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := utils.ReadAllLimit(resp.Body, maxVersionFileSize)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("version file: %w", err)
 	}
 	content := strings.TrimRight(string(body), "\n")
 	return content, nil
@@ -246,16 +256,11 @@ func (u *CoreUpdater) download(updateDir, packagePath, packageURL string) (err e
 	}()
 
 	log.Debugln("updater: reading http body")
-	// This use of io.Copy is now safe, because we limited body's Reader.
-	n, err := io.Copy(wc, io.LimitReader(resp.Body, MaxPackageFileSize))
+	// CopyLimit reads at most one byte past MaxPackageFileSize, so a package
+	// of exactly the limit is accepted and anything larger is an error.
+	_, err = utils.CopyLimit(wc, resp.Body, MaxPackageFileSize)
 	if err != nil {
-		return fmt.Errorf("io.Copy(): %w", err)
-	}
-	if n == MaxPackageFileSize {
-		// Use whether n is equal to MaxPackageFileSize to determine whether the limit has been reached.
-		// It is also possible that the size of the downloaded file is exactly the same as the maximum limit,
-		// but we should not consider this too rare situation.
-		return fmt.Errorf("attempted to read more than %d bytes", MaxPackageFileSize)
+		return fmt.Errorf("package: %w", err)
 	}
 	log.Debugln("updater: downloaded package to file %s", packagePath)
 
@@ -361,7 +366,7 @@ func (u *CoreUpdater) gzFileUnpack(gzfile, outDir string, fileMode os.FileMode) 
 	}()
 
 	// Copy the contents of the gzReader to the output file
-	_, err = io.Copy(wc, gzReader)
+	_, err = utils.CopyLimit(wc, gzReader, MaxUnpackedFileSize)
 	if err != nil {
 		return "", fmt.Errorf("io.Copy(): %w", err)
 	}
@@ -423,7 +428,7 @@ func (u *CoreUpdater) zipFileUnpack(zipfile, outDir string, fileMode os.FileMode
 			err = closeErr
 		}
 	}()
-	_, err = io.Copy(wc, rc)
+	_, err = utils.CopyLimit(wc, rc, MaxUnpackedFileSize)
 	if err != nil {
 		return "", fmt.Errorf("io.Copy(): %w", err)
 	}
