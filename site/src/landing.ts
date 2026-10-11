@@ -87,7 +87,7 @@ export const strings = {
 		},
 		mikan: {
 			title: 'Citrus и Mikan',
-			text: 'Mikan — свободная VPN-панель. Её ноды запускают Citrus как библиотеку и считают трафик по каждому соединению каждого пользователя. Ядро живёт в отдельном репозитории, чтобы его можно было использовать и без панели: как обычный клиент или сервер в стиле mihomo.',
+			text: 'Mikan — свободная VPN-панель. Её ноды встраивают ядро как библиотеку и считают трафик по каждому соединению каждого пользователя; сейчас это mihomo, Citrus станет следующим. Ядро живёт в отдельном репозитории, чтобы его можно было использовать и без панели: как обычный клиент или сервер в стиле mihomo.',
 			site: 'Сайт Mikan',
 			code: 'Mikan на GitHub',
 		},
@@ -178,7 +178,7 @@ export const strings = {
 		},
 		mikan: {
 			title: 'Citrus and Mikan',
-			text: 'Mikan is a free VPN panel. Its nodes run Citrus as a library and count traffic per user on every connection. The core lives in its own repository so it can be used without the panel too: as a regular mihomo-style client or server.',
+			text: 'Mikan is a free VPN panel. Its nodes embed the core as a library and count traffic per user on every connection; today that is mihomo, and Citrus is next. The core lives in its own repository so it can be used without the panel too: as a regular mihomo-style client or server.',
 			site: 'Mikan website',
 			code: 'Mikan on GitHub',
 		},
