@@ -449,7 +449,9 @@ func NewProxiesParser(pdName string, tunnel C.Tunnel, filter string, excludeFilt
 
 				proxy, err := adapter.ParseProxy(mapping, adapter.WithTunnelForAPI(tunnel), adapter.WithProviderName(pdName))
 				if errors.Is(err, C.ErrRemovedProtocol) {
-					log.Warnln("[Provider] %s: skip proxy %d (%s): %s", pdName, idx, name, err)
+					// Not err itself: it is built from the proxy's mapping and may
+					// carry credentials.
+					log.Warnln("[Provider] %s: skip proxy %d (%s, type %v): it uses a protocol or option removed from Citrus (SSR, Hysteria v1, TUIC v4, Shadowsocks stream ciphers, v2ray-plugin)", pdName, idx, name, mapping["type"])
 					continue
 				}
 				if err != nil {
