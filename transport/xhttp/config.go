@@ -88,11 +88,9 @@ func (c *Config) EffectiveMode(hasReality bool) string {
 	return "packet-up"
 }
 
+// NormalizedPath returns the path part of Path (without the "?query" part), as Xray-core's GetNormalizedPath does.
 func (c *Config) NormalizedPath() string {
-	path := c.Path
-	if path == "" {
-		path = "/"
-	}
+	path, _, _ := strings.Cut(c.Path, "?")
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
@@ -103,6 +101,13 @@ func (c *Config) NormalizedPath() string {
 		}
 	}
 	return path
+}
+
+// NormalizedQuery returns the raw "?query" part of Path that is sent with every request,
+// as Xray-core's GetNormalizedQuery does. The server ignores it when matching the path.
+func (c *Config) NormalizedQuery() string {
+	_, query, _ := strings.Cut(c.Path, "?")
+	return query
 }
 
 func (c *Config) GetRequestHeader() http.Header {

@@ -226,6 +226,22 @@ func TestPacketUpCloseWaitsForInflightAndRejectsWrites(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestPacketUpPathWithQuery(t *testing.T) {
+	var gotURL atomic.Value
+	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		gotURL.Store(req.URL.String())
+		return &http.Response{Status: "200 OK", StatusCode: http.StatusOK, Body: http.NoBody}, nil
+	})
+	writer := newTestPacketUpWriter(&Config{Host: "example.com", Path: "/xhttp?ed=2048&a=b"}, transport, 1000, Range{1, 1})
+	writer.writeMu.Lock()
+	_, err := writer.write([]byte("payload"))
+	writer.writeMu.Unlock()
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	assert.Equal(t, "https://example.com/xhttp/session/0?ed=2048&a=b", gotURL.Load())
+}
+
 func TestPacketUpWaitsForResponseOverHTTP1(t *testing.T) {
 	assert.True(t, isHTTP1Transport(&http1Transport{&http.Transport{}}))
 	assert.True(t, isHTTP1Transport(onlyRoundTripper{&http1Transport{&http.Transport{}}}))
