@@ -13,7 +13,6 @@ import (
 	"github.com/metacubex/mihomo/transport/socks5"
 	"github.com/metacubex/mihomo/transport/tuic/common"
 	"github.com/metacubex/mihomo/transport/tuic/types"
-	v4 "github.com/metacubex/mihomo/transport/tuic/v4"
 	v5 "github.com/metacubex/mihomo/transport/tuic/v5"
 
 	"github.com/gofrs/uuid/v5"
@@ -27,7 +26,6 @@ type ServerOption struct {
 
 	TlsConfig             *tls.Config
 	QuicConfig            *quic.Config
-	Tokens                [][32]byte          // V4 special
 	Users                 map[[16]byte]string // V5 special
 	CongestionController  string
 	AuthenticationTimeout time.Duration
@@ -38,7 +36,6 @@ type ServerOption struct {
 
 type Server struct {
 	*ServerOption
-	optionV4 *v4.ServerOption
 	optionV5 *v5.ServerOption
 	listener *quic.EarlyListener
 }
@@ -54,9 +51,6 @@ func (s *Server) Serve() error {
 			Server:   s,
 			quicConn: conn,
 			uuid:     utils.NewUUIDV4(),
-		}
-		if h.optionV4 != nil {
-			h.v4Handler = v4.NewServerHandler(h.optionV4, conn, h.uuid)
 		}
 		if h.optionV5 != nil {
 			h.v5Handler = v5.NewServerHandler(h.optionV5, conn, h.uuid)
@@ -74,7 +68,6 @@ type serverHandler struct {
 	quicConn *quic.Conn
 	uuid     uuid.UUID
 
-	v4Handler types.ServerHandler
 	v5Handler types.ServerHandler
 }
 
@@ -95,20 +88,10 @@ func (s *serverHandler) handle() {
 	}
 
 	time.AfterFunc(s.AuthenticationTimeout, func() {
-		if s.v4Handler != nil {
-			if s.v4Handler.AuthOk() {
-				return
-			}
-		}
-
 		if s.v5Handler != nil {
 			if s.v5Handler.AuthOk() {
 				return
 			}
-		}
-
-		if s.v4Handler != nil {
-			s.v4Handler.HandleTimeout()
 		}
 
 		if s.v5Handler != nil {
@@ -127,10 +110,6 @@ func (s *serverHandler) handleMessage() (err error) {
 		go func() (err error) {
 			if len(message) > 0 {
 				switch message[0] {
-				case v4.VER:
-					if s.v4Handler != nil {
-						return s.v4Handler.HandleMessage(message)
-					}
 				case v5.VER:
 					if s.v5Handler != nil {
 						return s.v5Handler.HandleMessage(message)
@@ -165,10 +144,6 @@ func (s *serverHandler) handleStream() (err error) {
 			}
 
 			switch verBytes[0] {
-			case v4.VER:
-				if s.v4Handler != nil {
-					return s.v4Handler.HandleStream(conn)
-				}
 			case v5.VER:
 				if s.v5Handler != nil {
 					return s.v5Handler.HandleStream(conn)
@@ -198,10 +173,6 @@ func (s *serverHandler) handleUniStream() (err error) {
 			}
 
 			switch verBytes[0] {
-			case v4.VER:
-				if s.v4Handler != nil {
-					return s.v4Handler.HandleUniStream(reader)
-				}
 			case v5.VER:
 				if s.v5Handler != nil {
 					return s.v5Handler.HandleUniStream(reader)
@@ -220,14 +191,6 @@ func NewServer(option *ServerOption, pc net.PacketConn) (*Server, error) {
 	server := &Server{
 		ServerOption: option,
 		listener:     listener,
-	}
-	if len(option.Tokens) > 0 {
-		server.optionV4 = &v4.ServerOption{
-			HandleTcpFn:           option.HandleTcpFn,
-			HandleUdpFn:           option.HandleUdpFn,
-			Tokens:                option.Tokens,
-			MaxUdpRelayPacketSize: option.MaxUdpRelayPacketSize,
-		}
 	}
 	if len(option.Users) > 0 {
 		maxUdpRelayPacketSize := option.MaxUdpRelayPacketSize

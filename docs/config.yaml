@@ -459,11 +459,10 @@ proxies: # socks5
   # Shadowsocks
   # cipher支持:
   #   aes-128-gcm aes-192-gcm aes-256-gcm
-  #   aes-128-cfb aes-192-cfb aes-256-cfb
-  #   aes-128-ctr aes-192-ctr aes-256-ctr
-  #   rc4-md5 chacha20-ietf xchacha20
   #   chacha20-ietf-poly1305 xchacha20-ietf-poly1305
   #   2022-blake3-aes-128-gcm 2022-blake3-aes-256-gcm 2022-blake3-chacha20-poly1305
+  #   none
+  # 不再支持旧的 stream 加密（rc4-md5、aes-*-cfb、aes-*-ctr、chacha20、chacha20-ietf、xchacha20）
   - name: "ss1"
     type: ss
     server: server
@@ -498,35 +497,6 @@ proxies: # socks5
     plugin-opts:
       mode: tls # or http
       # host: bing.com
-
-  - name: "ss3"
-    type: ss
-    server: server
-    port: 443
-    cipher: chacha20-ietf-poly1305
-    password: "password"
-    plugin: v2ray-plugin
-    plugin-opts:
-      mode: websocket # no QUIC now
-      # tls: true # wss
-      # fingerprint: xxxx # 配置指纹将实现 SSL Pining 效果, 可使用 openssl x509 -noout -fingerprint -sha256 -inform pem -in yourcert.pem 获取
-      # 下面两项如果填写则开启 mTLS（需要同时填写）
-      # certificate: ./client.crt # 证书 PEM 格式，或者 证书的路径
-      # private-key: ./client.key # 证书对应的私钥 PEM 格式，或者私钥路径
-      # ech-opts:
-      #   enable: true # 必须手动开启
-      #   # 如果config为空则通过dns解析，不为空则通过该值指定，格式为经过base64编码的ech参数（dig +short TYPE65 tls-ech.dev）
-      #   config: AEn+DQBFKwAgACABWIHUGj4u+PIggYXcR5JF0gYk3dCRioBW8uJq9H4mKAAIAAEAAQABAANAEnB1YmxpYy50bHMtZWNoLmRldgAA
-      #   # query-server-name: xxx.com # 可选项，不为空时用于指定通过dns解析时的域名
-      # skip-cert-verify: true
-      # name-cert-verify: example.com # 仅修改证书 DNSName 校验目标，不修改 SNI
-      # host: bing.com
-      # path: "/"
-      # mux: true
-      # headers:
-      #   custom: value
-      # v2ray-http-upgrade: false
-      # v2ray-http-upgrade-fast-open: false
 
   - name: "ss4-shadow-tls"
     type: ss
@@ -1201,36 +1171,6 @@ proxies: # socks5
     # certificate: ./client.crt # 证书 PEM 格式，或者 证书的路径
     # private-key: ./client.key # 证书对应的私钥 PEM 格式，或者私钥路径
 
-  #hysteria
-  - name: "hysteria"
-    type: hysteria
-    server: server.com
-    port: 443
-    # ports: 1000,2000-3000,5000 # port 不可省略
-    auth-str: yourpassword
-    # obfs: obfs_str
-    # alpn:
-    #   - h3
-    protocol: udp # 支持 udp/wechat-video/faketcp
-    up: "30 Mbps" # 若不写单位，默认为 Mbps
-    down: "200 Mbps" # 若不写单位，默认为 Mbps
-    # sni: server.com
-    # ech-opts:
-    #   enable: true # 必须手动开启
-    #   # 如果config为空则通过dns解析，不为空则通过该值指定，格式为经过base64编码的ech参数（dig +short TYPE65 tls-ech.dev）
-    #   config: AEn+DQBFKwAgACABWIHUGj4u+PIggYXcR5JF0gYk3dCRioBW8uJq9H4mKAAIAAEAAQABAANAEnB1YmxpYy50bHMtZWNoLmRldgAA
-    #   # query-server-name: xxx.com # 可选项，不为空时用于指定通过dns解析时的域名
-    # skip-cert-verify: false
-    # name-cert-verify: example.com # 仅修改证书 DNSName 校验目标，不修改 SNI
-    # recv-window-conn: 12582912
-    # recv-window: 52428800
-    # disable-mtu-discovery: false
-    # fingerprint: xxxx # 配置指纹将实现 SSL Pining 效果, 可使用 openssl x509 -noout -fingerprint -sha256 -inform pem -in yourcert.pem 获取
-    # 下面两项如果填写则开启 mTLS（需要同时填写）
-    # certificate: ./client.crt # 证书 PEM 格式，或者 证书的路径
-    # private-key: ./client.key # 证书对应的私钥 PEM 格式，或者私钥路径
-    # fast-open: true # 支持 TCP 快速打开，默认为 false
-
   #hysteria2
   - name: "hysteria2"
     type: hysteria2
@@ -1567,9 +1507,7 @@ proxies: # socks5
     server: www.example.com
     port: 10443
     type: tuic
-    # tuicV4 必须填写 token（不可同时填写 uuid 和 password）
-    token: TOKEN
-    # tuicV5 必须填写 uuid 和 password（不可同时填写 token）
+    # 必须填写 uuid 和 password（仅支持 TUIC v5，v4 的 token 已不再支持）
     uuid: 00000000-0000-0000-0000-000000000001
     password: PASSWORD_1
     # ip: 127.0.0.1 # for overwriting the DNS lookup result of the server address set in option 'server'
@@ -1577,7 +1515,6 @@ proxies: # socks5
     # alpn: [h3]
     disable-sni: true
     reduce-rtt: true
-    request-timeout: 8000
     udp-relay-mode: native # Available: "native", "quic". Default: "native"
     # congestion-controller: bbr # Available: "cubic", "new_reno", "bbr". Default: "cubic"
     # cwnd: 10 # default: 32
@@ -1622,26 +1559,6 @@ proxies: # socks5
     # recv-window-conn: 0
     # recv-window: 0
     # disable-mtu-discovery: false
-
-  # ShadowsocksR
-  # The supported ciphers (encryption methods): all stream ciphers in ss
-  # The supported obfses:
-  #   plain http_simple http_post
-  #   random_head tls1.2_ticket_auth tls1.2_ticket_fastauth
-  # The supported protocols:
-  #   origin auth_sha1_v4 auth_aes128_md5
-  #   auth_aes128_sha1 auth_chain_a auth_chain_b
-  - name: "ssr"
-    type: ssr
-    server: server
-    port: 443
-    cipher: chacha20-ietf
-    password: "password"
-    obfs: tls1.2_ticket_auth
-    protocol: auth_sha1_v4
-    # obfs-param: domain.tld
-    # protocol-param: "#"
-    # udp: true
 
   - name: "ssh-out"
     type: ssh
@@ -2343,9 +2260,7 @@ listeners:
     # routing-mark: 0 # 为监听socket设置routing-mark（仅支持linux）
     # rule: sub-rule-name1 # 默认使用 rules，如果未找到 sub-rule 则直接使用 rules
     # proxy: proxy # 如果不为空则直接将该入站流量交由指定 proxy 处理 (当 proxy 不为空时，这里的 proxy 名称必须合法，否则会出错)
-    # token:    # tuicV4 填写（可以同时填写 users）
-    #   - TOKEN
-    # users:    # tuicV5 填写（可以同时填写 token）
+    # users:    # 仅支持 TUIC v5（v4 的 token 已不再支持）
     #   00000000-0000-0000-0000-000000000000: PASSWORD_0
     #   00000000-0000-0000-0000-000000000001: PASSWORD_1
     #  certificate: ./server.crt # 证书 PEM 格式，或者 证书的路径
@@ -2852,9 +2767,7 @@ listeners:
 # tuic-server:
 #  enable: true
 #  listen: 127.0.0.1:10443
-#  token:    # tuicV4 填写（可以同时填写 users）
-#    - TOKEN
-#  users:    # tuicV5 填写（可以同时填写 token）
+#  users:    # 仅支持 TUIC v5（v4 的 token 已不再支持）
 #    00000000-0000-0000-0000-000000000000: PASSWORD_0
 #    00000000-0000-0000-0000-000000000001: PASSWORD_1
 #  certificate: ./server.crt

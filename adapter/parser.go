@@ -34,13 +34,6 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
 			break
 		}
 		proxy, err = outbound.NewShadowSocks(*ssOption)
-	case "ssr":
-		ssrOption := &outbound.ShadowSocksROption{BasicOption: basicOption}
-		err = decoder.Decode(mapping, ssrOption)
-		if err != nil {
-			break
-		}
-		proxy, err = outbound.NewShadowSocksR(*ssrOption)
 	case "socks5":
 		socksOption := &outbound.Socks5Option{BasicOption: basicOption}
 		err = decoder.Decode(mapping, socksOption)
@@ -83,13 +76,6 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
 			break
 		}
 		proxy, err = outbound.NewTrojan(*trojanOption)
-	case "hysteria":
-		hyOption := &outbound.HysteriaOption{BasicOption: basicOption}
-		err = decoder.Decode(mapping, hyOption)
-		if err != nil {
-			break
-		}
-		proxy, err = outbound.NewHysteria(*hyOption)
 	case "hysteria2":
 		hyOption := &outbound.Hysteria2Option{BasicOption: basicOption}
 		err = decoder.Decode(mapping, hyOption)
@@ -223,6 +209,8 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
 			break
 		}
 		proxy, err = outbound.NewEasyTier(*easyTierOption)
+	case "ssr", "hysteria":
+		return nil, fmt.Errorf("%w: proxy type %s", C.ErrRemovedProtocol, proxyType)
 	default:
 		return nil, fmt.Errorf("unsupport proxy type: %s", proxyType)
 	}

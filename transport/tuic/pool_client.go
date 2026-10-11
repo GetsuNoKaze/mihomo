@@ -14,7 +14,6 @@ import (
 )
 
 type PoolClient struct {
-	newClientOptionV4 *ClientOptionV4
 	newClientOptionV5 *ClientOptionV5
 
 	dialFn          DialFunc
@@ -57,11 +56,7 @@ func (t *PoolClient) newClient(udp bool) (client Client) {
 	clientsMutex.Lock()
 	defer clientsMutex.Unlock()
 
-	if t.newClientOptionV4 != nil {
-		client = NewClientV4(t.newClientOptionV4, udp, t.dialFn)
-	} else {
-		client = NewClientV5(t.newClientOptionV5, udp, t.dialFn)
-	}
+	client = NewClientV5(t.newClientOptionV5, udp, t.dialFn)
 
 	client.SetLastVisited(time.Now())
 
@@ -117,15 +112,6 @@ func (t *PoolClient) getClient(udp bool) Client {
 		bestClient.SetLastVisited(time.Now())
 		return bestClient
 	}
-}
-
-func NewPoolClientV4(clientOption *ClientOptionV4, dialFn DialFunc) *PoolClient {
-	p := &PoolClient{
-		dialFn: dialFn,
-	}
-	newClientOption := *clientOption
-	p.newClientOptionV4 = &newClientOption
-	return p
 }
 
 func NewPoolClientV5(clientOption *ClientOptionV5, dialFn DialFunc) *PoolClient {

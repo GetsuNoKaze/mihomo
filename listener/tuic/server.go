@@ -2,6 +2,7 @@ package tuic
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -34,6 +35,9 @@ type Listener struct {
 }
 
 func New(config LC.TuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, additions ...inbound.Addition) (*Listener, error) {
+	if len(config.Token) > 0 {
+		return nil, fmt.Errorf("tuic-server: %w", tuic.ErrV4Unsupported)
+	}
 	if len(additions) == 0 {
 		additions = []inbound.Addition{
 			inbound.WithInName("DEFAULT-TUIC"),
@@ -107,10 +111,7 @@ func New(config LC.TuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, additi
 	quicConfig.InitialConnectionReceiveWindow = tuic.DefaultConnectionReceiveWindow / 10
 	quicConfig.MaxConnectionReceiveWindow = tuic.DefaultConnectionReceiveWindow
 
-	packetOverHead := tuic.PacketOverHeadV4
-	if len(config.Token) == 0 {
-		packetOverHead = tuic.PacketOverHeadV5
-	}
+	packetOverHead := tuic.PacketOverHeadV5
 
 	if config.CWND == 0 {
 		config.CWND = 32
@@ -157,13 +158,6 @@ func New(config LC.TuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, additi
 		MaxUdpRelayPacketSize: config.MaxUdpRelayPacketSize,
 		CWND:                  config.CWND,
 		BBRProfile:            config.BBRProfile,
-	}
-	if len(config.Token) > 0 {
-		tokens := make([][32]byte, len(config.Token))
-		for i, token := range config.Token {
-			tokens[i] = tuic.GenTKN(token)
-		}
-		option.Tokens = tokens
 	}
 	if len(config.Users) > 0 {
 		users := make(map[[16]byte]string)

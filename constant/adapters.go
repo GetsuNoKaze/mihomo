@@ -32,14 +32,12 @@ const (
 	LoadBalance
 
 	Shadowsocks
-	ShadowsocksR
 	Snell
 	Socks5
 	Http
 	Vmess
 	Vless
 	Trojan
-	Hysteria
 	Hysteria2
 	WireGuard
 	Tuic
@@ -196,8 +194,6 @@ func (at AdapterType) String() string {
 		return "Dns"
 	case Shadowsocks:
 		return "Shadowsocks"
-	case ShadowsocksR:
-		return "ShadowsocksR"
 	case Snell:
 		return "Snell"
 	case Socks5:
@@ -210,8 +206,6 @@ func (at AdapterType) String() string {
 		return "Vless"
 	case Trojan:
 		return "Trojan"
-	case Hysteria:
-		return "Hysteria"
 	case Hysteria2:
 		return "Hysteria2"
 	case WireGuard:
