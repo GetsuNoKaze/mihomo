@@ -317,7 +317,7 @@ func NewShadowSocks(option ShadowSocksOption) (*ShadowSocks, error) {
 		obfsMode = opts.Mode
 		obfsOption = &opts
 	} else if option.Plugin == "v2ray-plugin" {
-		return nil, fmt.Errorf("ss %s: v2ray-plugin is no longer supported", addr)
+		return nil, fmt.Errorf("ss %s: %w: v2ray-plugin is no longer supported", addr, C.ErrRemovedProtocol)
 	} else if option.Plugin == "gost-plugin" {
 		opts := gostObfsOption{Host: "bing.com", Mux: true}
 		if err := decoder.Decode(option.PluginOpts, &opts); err != nil {

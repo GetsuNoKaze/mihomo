@@ -3,11 +3,13 @@ package core
 import (
 	"crypto/md5"
 	"errors"
+	"fmt"
 	"net"
 	"sort"
 	"strings"
 
 	N "github.com/metacubex/mihomo/common/net"
+	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/shadowsocks/shadowaead"
 )
 
@@ -28,7 +30,7 @@ type PacketConnCipher interface {
 var ErrCipherNotSupported = errors.New("cipher not supported")
 
 // ErrStreamCipherRemoved occurs when a legacy (pre-AEAD) stream cipher is requested.
-var ErrStreamCipherRemoved = errors.New("shadowsocks stream ciphers are no longer supported, use an AEAD cipher (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305) or 2022-blake3-*")
+var ErrStreamCipherRemoved = fmt.Errorf("%w: shadowsocks stream ciphers are no longer supported, use an AEAD cipher (aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305) or 2022-blake3-*", C.ErrRemovedProtocol)
 
 const (
 	aeadAes128Gcm         = "AEAD_AES_128_GCM"

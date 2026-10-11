@@ -209,6 +209,8 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
 			break
 		}
 		proxy, err = outbound.NewEasyTier(*easyTierOption)
+	case "ssr", "hysteria":
+		return nil, fmt.Errorf("%w: proxy type %s", C.ErrRemovedProtocol, proxyType)
 	default:
 		return nil, fmt.Errorf("unsupport proxy type: %s", proxyType)
 	}

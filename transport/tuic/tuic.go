@@ -1,7 +1,9 @@
 package tuic
 
 import (
-	"errors"
+	"fmt"
+
+	C "github.com/metacubex/mihomo/constant"
 
 	"github.com/metacubex/mihomo/transport/tuic/common"
 	"github.com/metacubex/mihomo/transport/tuic/types"
@@ -21,7 +23,7 @@ type DialFunc = types.DialFunc
 var TooManyOpenStreams = types.TooManyOpenStreams
 
 // ErrV4Unsupported is returned for configs that still set the TUIC v4 `token`.
-var ErrV4Unsupported = errors.New("TUIC v4 is no longer supported, use uuid/password (v5)")
+var ErrV4Unsupported = fmt.Errorf("%w: TUIC v4 is no longer supported, use uuid/password (v5)", C.ErrRemovedProtocol)
 
 const DefaultStreamReceiveWindow = common.DefaultStreamReceiveWindow
 const DefaultConnectionReceiveWindow = common.DefaultConnectionReceiveWindow
