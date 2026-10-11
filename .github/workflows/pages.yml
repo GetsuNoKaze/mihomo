@@ -1,13 +1,13 @@
 name: Pages
 
-# The site (site/) on GitHub Pages: getmikan.github.io/Citrus. It is built from main when
+# The site (site/) on GitHub Pages: getmikan.github.io/Citrus. It is built from dev when
 # the site changes, or by hand. Settings → Pages → Source must be "GitHub Actions".
 #
 # Actions are pinned to a commit (the comment is the version it was), the same pins as the
 # Mikan site workflow.
 on:
   push:
-    branches: [main]
+    branches: [dev]
     paths:
       - site/**
       - .github/workflows/pages.yml
