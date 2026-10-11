@@ -4,7 +4,6 @@ go 1.20
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0
-	github.com/coreos/go-iptables v0.8.0
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/easytier/easytier/easytier-go v0.0.0-20260910071355-3d0c9c3ca5e2
 	github.com/enfein/mieru/v3 v3.38.1
@@ -22,7 +21,6 @@ require (
 	github.com/metacubex/cpu v0.1.2
 	github.com/metacubex/edwards25519 v1.2.0
 	github.com/metacubex/fswatch v0.1.1
-	github.com/metacubex/gopacket v1.1.20-0.20230608035415-7e2f98a3e759
 	github.com/metacubex/http v0.1.8
 	github.com/metacubex/jls-quic-go v0.0.0-20260727080412-732f2fc9a34d
 	github.com/metacubex/jls-tls v0.0.0-20260723084315-67adc0e2f796
