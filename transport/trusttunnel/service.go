@@ -138,7 +138,7 @@ func (s *Service) Close() error {
 
 func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	authorization := request.Header.Get("Proxy-Authorization")
-	username, loaded := s.verify(authorization)
+	username, loaded := s.verifyRequest(request, authorization)
 	if !loaded {
 		writer.WriteHeader(http.StatusProxyAuthRequired)
 		s.badRequest(request.Context(), request, E.New("authorization failed"))
