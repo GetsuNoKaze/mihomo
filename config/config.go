@@ -1206,6 +1206,11 @@ func parseNameServer(servers []string, respectRules bool, preferH3 bool) ([]dns.
 		server = parsePureDNSServer(server)
 		u, err := url.Parse(server)
 		if err != nil {
+			// *url.Error repeats the whole server string, userinfo included
+			var urlErr *url.Error
+			if errors.As(err, &urlErr) {
+				err = urlErr.Err
+			}
 			return nil, fmt.Errorf("DNS NameServer[%d] format error: %s", idx, err.Error())
 		}
 
