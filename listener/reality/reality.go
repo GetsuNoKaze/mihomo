@@ -11,6 +11,7 @@ import (
 	"time"
 
 	N "github.com/metacubex/mihomo/common/net"
+	tlsC "github.com/metacubex/mihomo/component/tls"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/listener/inner"
 	"github.com/metacubex/mihomo/log"
@@ -29,6 +30,17 @@ type Config struct {
 	ServerNames       []string
 	MaxTimeDifference int // milliseconds, like Xray's maxTimeDiff
 	Proxy             string
+
+	// Mldsa65Seed is Xray's mldsa65Seed: the base64url (unpadded) encoded 32-byte ML-DSA-65 seed.
+	// The server then signs its temporary certificate, which clients with the matching
+	// mldsa65-verify (see utls.RealityMldsa65Verify) require.
+	Mldsa65Seed string
+	// RequireX25519MLKEM768 rejects (forwards to dest) client hellos without an X25519MLKEM768
+	// key share placed before X25519, like Xray v26.9.8+ does.
+	RequireX25519MLKEM768 bool
+	// MinClientVer and MaxClientVer limit the Xray version ("x.y.z") reported by clients.
+	MinClientVer string
+	MaxClientVer string
 
 	LimitFallbackUpload   LimitFallback
 	LimitFallbackDownload LimitFallback
@@ -57,6 +69,27 @@ func (c Config) Build(tunnel C.Tunnel) (*Builder, error) {
 	// Xray's maxTimeDiff is in milliseconds (transport/internet/reality/config.go)
 	realityConfig.MaxTimeDiff = time.Duration(c.MaxTimeDifference) * time.Millisecond
 
+	if c.Mldsa65Seed != "" {
+		if c.Mldsa65Seed == c.PrivateKey {
+			return nil, errors.New("mldsa65-seed and private-key can not be the same value")
+		}
+		seed, err := base64.RawURLEncoding.DecodeString(c.Mldsa65Seed)
+		if err != nil || len(seed) != utls.RealityMldsa65SeedSize {
+			return nil, fmt.Errorf("invalid mldsa65-seed: %s", c.Mldsa65Seed)
+		}
+		if _, err = utls.RealityMldsa65Verify(seed); err != nil {
+			return nil, fmt.Errorf("invalid mldsa65-seed: %w", err)
+		}
+		realityConfig.Mldsa65Seed = seed
+	}
+	realityConfig.RequireX25519MLKEM768 = c.RequireX25519MLKEM768
+	if realityConfig.MinClientVer, err = parseClientVer(c.MinClientVer); err != nil {
+		return nil, fmt.Errorf("invalid min-client-ver: %w", err)
+	}
+	if realityConfig.MaxClientVer, err = parseClientVer(c.MaxClientVer); err != nil {
+		return nil, fmt.Errorf("invalid max-client-ver: %w", err)
+	}
+
 	realityConfig.ShortIds = make(map[[8]byte]bool)
 	for i, shortIDString := range c.ShortID {
 		var shortID [8]byte
@@ -82,6 +115,18 @@ func (c Config) Build(tunnel C.Tunnel) (*Builder, error) {
 	realityConfig.LimitFallbackDownload = c.LimitFallbackDownload
 
 	return &Builder{realityConfig}, nil
+}
+
+// parseClientVer parses an Xray version like "26.10.10" into 3 bytes, nil for an empty one.
+func parseClientVer(version string) ([]byte, error) {
+	if version == "" {
+		return nil, nil
+	}
+	clientVer, err := tlsC.ParseRealityClientVersion(version)
+	if err != nil {
+		return nil, err
+	}
+	return clientVer[:], nil
 }
 
 type Builder struct {

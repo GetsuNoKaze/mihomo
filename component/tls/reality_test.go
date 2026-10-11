@@ -330,7 +330,8 @@ func TestRealityVerifyCertificate(t *testing.T) {
 	}
 }
 
-// TestRealityHandshake runs the client against the REALITY server of utls with a local TLS 1.3 target.
+// TestRealityHandshake runs the client against the REALITY server of utls with a local TLS 1.3 target,
+// which signs with ML-DSA-65 and requires an X25519MLKEM768 key share like Xray v26.9.8+ servers.
 func TestRealityHandshake(t *testing.T) {
 	const serverName = "example.com"
 	target := newTestTLSTarget(t, serverName)
@@ -340,14 +341,29 @@ func TestRealityHandshake(t *testing.T) {
 		t.Fatal(err)
 	}
 	shortID := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
+	mldsa65Seed := make([]byte, utls.RealityMldsa65SeedSize)
+	_, _ = rand.Read(mldsa65Seed)
+	mldsa65VerifyBytes, err := utls.RealityMldsa65Verify(mldsa65Seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mldsa65Verify, err := ParseRealityMldsa65Verify(base64.RawURLEncoding.EncodeToString(mldsa65VerifyBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherSeed := make([]byte, utls.RealityMldsa65SeedSize)
+	otherVerifyBytes, _ := utls.RealityMldsa65Verify(otherSeed)
+	otherVerify, _ := ParseRealityMldsa65Verify(base64.RawURLEncoding.EncodeToString(otherVerifyBytes))
 	serverConfig := &utls.RealityConfig{
-		DialContext:  (&net.Dialer{}).DialContext,
-		Type:         "tcp",
-		Dest:         target,
-		ServerNames:  map[string]bool{serverName: true},
-		PrivateKey:   privateKey.Bytes(),
-		MinClientVer: []byte{26, 10, 10},
-		ShortIds:     map[[8]byte]bool{shortID: true},
+		DialContext:           (&net.Dialer{}).DialContext,
+		Type:                  "tcp",
+		Dest:                  target,
+		ServerNames:           map[string]bool{serverName: true},
+		PrivateKey:            privateKey.Bytes(),
+		MinClientVer:          []byte{26, 10, 10},
+		ShortIds:              map[[8]byte]bool{shortID: true},
+		Mldsa65Seed:           mldsa65Seed,
+		RequireX25519MLKEM768: true,
 	}
 	serverConfig.SessionTicketsDisabled = true
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -373,7 +389,7 @@ func TestRealityHandshake(t *testing.T) {
 		}
 	}()
 
-	dial := func(fingerprint UClientHelloID, clientVersion string) error {
+	dial := func(fingerprint UClientHelloID, clientVersion string, verify *mldsa.PublicKey) error {
 		conn, err := net.Dial("tcp", listener.Addr().String())
 		if err != nil {
 			return err
@@ -381,7 +397,7 @@ func TestRealityHandshake(t *testing.T) {
 		defer conn.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		realityConfig := &RealityConfig{PublicKey: privateKey.PublicKey(), ShortID: shortID}
+		realityConfig := &RealityConfig{PublicKey: privateKey.PublicKey(), ShortID: shortID, Mldsa65Verify: verify}
 		if realityConfig.ClientVersion, err = ParseRealityClientVersion(clientVersion); err != nil {
 			return err
 		}
@@ -398,12 +414,22 @@ func TestRealityHandshake(t *testing.T) {
 		}
 		return nil
 	}
-	for _, fingerprint := range []UClientHelloID{utls.HelloChrome_Auto, utls.HelloFirefox_Auto, utls.HelloSafari_Auto, utls.HelloIOS_Auto} {
-		if err = dial(fingerprint, RealityDefaultClientVersion); err != nil {
-			t.Errorf("%v: %v", fingerprint.Str(), err)
+	// every fingerprint usable for REALITY passes the X25519MLKEM768 requirement
+	for name, fingerprint := range fingerprints {
+		if name == "random" || strings.Contains(name, "psk") || !hasKeyShareExtension(t, fingerprint) {
+			continue // see TestRealityClientHelloX25519MLKEM768
+		}
+		if err = dial(fingerprint, RealityDefaultClientVersion, mldsa65Verify); err != nil {
+			t.Errorf("%s (%v): %v", name, fingerprint.Str(), err)
 		}
 	}
-	if err = dial(utls.HelloChrome_Auto, "1.8.2"); err == nil {
+	if err = dial(utls.HelloFirefox_Auto, RealityDefaultClientVersion, nil); err != nil {
+		t.Errorf("without mldsa65-verify: %v", err)
+	}
+	if err = dial(utls.HelloChrome_Auto, RealityDefaultClientVersion, otherVerify); err == nil {
+		t.Error("wrong mldsa65-verify is accepted")
+	}
+	if err = dial(utls.HelloChrome_Auto, "1.8.2", mldsa65Verify); err == nil {
 		t.Error("client version below minClientVer is accepted")
 	}
 }
@@ -425,8 +451,21 @@ func newTestTLSTarget(t *testing.T, serverName string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// a chain as long as a real site's one, so that the ML-DSA-65 signature (3309 bytes) of
+	// the REALITY server fits in the size of the target's Certificate message
+	paddingTemplate := x509.Certificate{
+		SerialNumber:    big.NewInt(2),
+		Subject:         pkix.Name{CommonName: "padding"},
+		NotBefore:       template.NotBefore,
+		NotAfter:        template.NotAfter,
+		ExtraExtensions: []pkix.Extension{{Id: []int{1, 3, 9999, 1}, Value: make([]byte, 4096)}},
+	}
+	padding, err := x509.CreateCertificate(rand.Reader, &paddingTemplate, &paddingTemplate, key.Public(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
 	listener, err := stdtls.Listen("tcp", "127.0.0.1:0", &stdtls.Config{
-		Certificates: []stdtls.Certificate{{Certificate: [][]byte{cert}, PrivateKey: key}},
+		Certificates: []stdtls.Certificate{{Certificate: [][]byte{cert, padding}, PrivateKey: key}},
 		MinVersion:   stdtls.VersionTLS13,
 	})
 	if err != nil {

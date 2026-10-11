@@ -117,9 +117,9 @@ var fingerprints = map[string]UClientHelloID{
 	"hellochrome_133":                  utls.HelloChrome_133,
 	"helloios_13":                      utls.HelloIOS_13,
 	"helloios_14":                      utls.HelloIOS_14,
-	"helloedge_106":                    utls.HelloEdge_Auto,   // HelloEdge_106 seems to be incompatible with utls
+	"helloedge_106":                    utls.HelloEdge_Auto, // HelloEdge_106 seems to be incompatible with utls
 	"hellosafari_26_3":                 utls.HelloSafari_26_3,
-	"hello360_11_0":                    utls.Hello360_Auto,    // Hello360_11_0 seems to be incompatible with utls
+	"hello360_11_0":                    utls.Hello360_Auto, // Hello360_11_0 seems to be incompatible with utls
 	"helloqq_11_1":                     utls.HelloQQ_11_1,
 	"hellorandomized":                  utls.HelloRandomized,
 	"hellorandomizedalpn":              utls.HelloRandomizedALPN,
