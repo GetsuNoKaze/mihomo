@@ -371,9 +371,10 @@ func TestInboundVless_Reality(t *testing.T) {
 		outboundOptions.Flow = "xtls-rprx-vision"
 		testInboundVless(t, inboundOptions, outboundOptions)
 	})
-	t.Run("X25519MLKEM768", func(t *testing.T) {
+	t.Run("DisableX25519MLKEM768", func(t *testing.T) {
 		outboundOptions := outboundOptions
-		outboundOptions.RealityOpts.SupportX25519MLKEM768 = true
+		supportX25519MLKEM768 := false
+		outboundOptions.RealityOpts.SupportX25519MLKEM768 = &supportX25519MLKEM768
 		testInboundVless(t, inboundOptions, outboundOptions)
 		t.Run("xtls-rprx-vision", func(t *testing.T) {
 			outboundOptions := outboundOptions
@@ -381,6 +382,15 @@ func TestInboundVless_Reality(t *testing.T) {
 			testInboundVless(t, inboundOptions, outboundOptions)
 		})
 	})
+	// fingerprints without their own X25519MLKEM768 key share get one injected
+	for _, fingerprint := range []string{"firefox", "safari", "ios", "hellofirefox_148", "hellosafari_26_3", "randomized"} {
+		t.Run(fingerprint, func(t *testing.T) {
+			outboundOptions := outboundOptions
+			outboundOptions.ClientFingerprint = fingerprint
+			outboundOptions.RealityOpts.ClientVersion = "1.8.2"
+			testInboundVless(t, inboundOptions, outboundOptions)
+		})
+	}
 }
 
 func TestInboundVless_Reality_Grpc(t *testing.T) {
@@ -405,9 +415,10 @@ func TestInboundVless_Reality_Grpc(t *testing.T) {
 		GrpcOpts:          outbound.GrpcOptions{GrpcServiceName: "GunService"},
 	}
 	testInboundVless(t, inboundOptions, outboundOptions)
-	t.Run("X25519MLKEM768", func(t *testing.T) {
+	t.Run("DisableX25519MLKEM768", func(t *testing.T) {
 		outboundOptions := outboundOptions
-		outboundOptions.RealityOpts.SupportX25519MLKEM768 = true
+		supportX25519MLKEM768 := false
+		outboundOptions.RealityOpts.SupportX25519MLKEM768 = &supportX25519MLKEM768
 		testInboundVless(t, inboundOptions, outboundOptions)
 	})
 }

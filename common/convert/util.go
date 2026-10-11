@@ -2,6 +2,7 @@ package convert
 
 import (
 	"encoding/base64"
+	"net/url"
 	"strings"
 	"time"
 
@@ -320,4 +321,31 @@ func SetUserAgent(header http.Header) {
 func VerifyMethod(cipher, password string) (err error) {
 	_, err = shadowimpl.FetchMethod(cipher, password, time.Now)
 	return
+}
+
+// handleTLSShareLinkQuery handles the TLS parameters of Xray share links:
+// pcs (pinnedPeerCertSha256), vcn (verifyPeerCertByName) and ech (echConfigList).
+func handleTLSShareLinkQuery(query url.Values, proxy map[string]any) {
+	if pcs := query.Get("pcs"); pcs != "" {
+		proxy["fingerprint"] = pcs
+	}
+	if vcn := query.Get("vcn"); vcn != "" {
+		proxy["name-cert-verify"] = vcn
+	}
+	if echConfigList := query.Get("ech"); echConfigList != "" {
+		// a "+" not percent-encoded in the link is decoded as a space
+		echConfigList = strings.ReplaceAll(echConfigList, " ", "+")
+		echOpts := map[string]any{"enable": true}
+		if strings.Contains(echConfigList, "://") {
+			// "https://1.1.1.1/dns-query" or "example.com+https://1.1.1.1/dns-query":
+			// query the ECH config of the server name or of example.com
+			// TODO: query it through the given DoH server instead of the default resolver
+			if name, _, ok := strings.Cut(echConfigList, "+"); ok && name != "" && !strings.Contains(name, "://") {
+				echOpts["query-server-name"] = name
+			}
+		} else {
+			echOpts["config"] = echConfigList // base64 ECHConfigList
+		}
+		proxy["ech-opts"] = echOpts
+	}
 }
