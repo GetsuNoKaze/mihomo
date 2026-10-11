@@ -376,12 +376,12 @@ proxies: # socks5
     # username: username
     # password: password
     # tls: true
-    # fingerprint: xxxx # 配置指纹将实现 SSL Pining 效果, 可使用 openssl x509 -noout -fingerprint -sha256 -inform pem -in yourcert.pem 获取
+    # fingerprint: xxxx # 配置指纹将实现 SSL Pining 效果, 可使用 openssl x509 -noout -fingerprint -sha256 -inform pem -in yourcert.pem 获取，可用逗号分隔多个 (任一匹配即可)
     # 下面两项如果填写则开启 mTLS（需要同时填写）
     # certificate: ./client.crt # 证书 PEM 格式，或者 证书的路径
     # private-key: ./client.key # 证书对应的私钥 PEM 格式，或者私钥路径
     # skip-cert-verify: true
-    # name-cert-verify: example.com # 仅修改证书 DNSName 校验目标，不修改 SNI
+    # name-cert-verify: example.com # 仅修改证书 DNSName 校验目标，不修改 SNI，可用逗号分隔多个 (任一匹配即可)
     # udp: true
     # ip-version: ipv6
 
