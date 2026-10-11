@@ -75,12 +75,16 @@ external-controller-cors:
   allow-private-network: true
 
 # RESTful API Unix socket 监听地址（ windows版本大于17063也可以使用，即大于等于1803/RS4版本即可使用 ）
-# ！！！注意： 从Unix socket访问api接口不会验证secret， 如果开启请自行保证安全问题 ！！！
-# 测试方法： curl -v --unix-socket "citrus.sock" http://localhost/
+# socket 文件权限默认为 0600，仅运行内核的用户可以连接（Windows 上由所在目录的 ACL 决定）
+# 如需允许同组用户访问，可设置环境变量 CITRUS_UNIX_SOCKET_MODE（八进制），例如 CITRUS_UNIX_SOCKET_MODE=0660
+# 如果配置了 secret，从 Unix socket 访问同样需要 `Authorization: Bearer ${secret}`
+# 测试方法： curl -v --unix-socket "citrus.sock" -H "Authorization: Bearer ${secret}" http://localhost/
 external-controller-unix: citrus.sock
 
 # RESTful API Windows namedpipe 监听地址
-# ！！！注意： 从Windows namedpipe访问api接口不会验证secret， 如果开启请自行保证安全问题 ！！！
+# 默认仅允许运行内核的用户、SYSTEM 和 Administrators 组访问
+# 可通过环境变量 LISTEN_NAMEDPIPE_SDDL 自定义安全描述符，例如允许所有用户读写（不安全）： D:P(A;;GRGW;;;BU)(A;;GA;;;SY)
+# 如果配置了 secret，从 namedpipe 访问同样需要 `Authorization: Bearer ${secret}`
 external-controller-pipe: \\.\pipe\citrus
 
 # 为 external-controller 和 external-controller-tls 的监听socket设置routing-mark（仅支持linux）
