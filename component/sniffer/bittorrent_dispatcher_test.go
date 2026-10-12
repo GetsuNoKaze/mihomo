@@ -80,7 +80,7 @@ func TestDispatcherUDPSniffProtocol(t *testing.T) {
 	sd := newBitTorrentDispatcher(t)
 
 	for name, payload := range map[string]string{
-		"utp":     "21001ecb6817f2805d044fd700100000dbd03029",
+		"utp":     "410277ef0b1fb1f60000000000040000c233000000080000000000000000",
 		"tracker": "00000417271019800000000078e90560",
 	} {
 		data, err := hex.DecodeString(payload)
