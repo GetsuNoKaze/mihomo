@@ -7,6 +7,7 @@ import (
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/listener/trusttunnel"
 	"github.com/metacubex/mihomo/log"
+	TT "github.com/metacubex/mihomo/transport/trusttunnel"
 )
 
 type TrustTunnelOption struct {
@@ -21,6 +22,7 @@ type TrustTunnelOption struct {
 	CongestionController string    `inbound:"congestion-controller,omitempty"`
 	CWND                 int       `inbound:"cwnd,omitempty"`
 	BBRProfile           string    `inbound:"bbr-profile,omitempty"`
+	Fallback             string    `inbound:"fallback,omitempty"`
 }
 
 func (o TrustTunnelOption) Equal(config C.InboundConfig) bool {
@@ -35,6 +37,9 @@ type TrustTunnel struct {
 }
 
 func NewTrustTunnel(options *TrustTunnelOption) (*TrustTunnel, error) {
+	if err := TT.ValidateFallback(options.Fallback); err != nil {
+		return nil, err
+	}
 	base, err := NewBase(&options.BaseOption)
 	if err != nil {
 		return nil, err
@@ -59,6 +64,7 @@ func NewTrustTunnel(options *TrustTunnelOption) (*TrustTunnel, error) {
 			CongestionController: options.CongestionController,
 			CWND:                 options.CWND,
 			BBRProfile:           options.BBRProfile,
+			Fallback:             options.Fallback,
 		},
 	}, nil
 }
