@@ -17,6 +17,7 @@ The config format is shared with mihomo, so the [mihomo documentation](https://w
 | `external-controller`, `external-ui`, `secret` | The controller API and web UI. |
 | `tun` | The TUN device and network stack. |
 | `dns`, `hosts` | DNS servers, fake IP, policies for DNS queries. |
+| `dns.serve-expired`, `dns.serve-expired-ttl`, `dns.serve-expired-client-timeout` | Serving expired cache entries while they refresh (RFC 8767). Off by default in Citrus. |
 | `sniffer` | Domain detection from traffic (TLS, HTTP, QUIC). |
 | `proxies`, `proxy-groups`, `proxy-providers` | Outbound proxies, selection groups and remote proxy sets. |
 | `rules`, `sub-rules`, `rule-providers` | Routing rules and remote rule sets. |

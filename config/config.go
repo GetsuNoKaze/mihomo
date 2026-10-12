@@ -520,7 +520,9 @@ func DefaultRawConfig() *RawConfig {
 			FakeIPRange:    "198.18.0.1/16",
 			FakeIPTTL:      1,
 
-			ServeExpired:              true,
+			// Citrus: serving expired answers is opt-in; the other two
+			// values apply once serve-expired is turned on.
+			ServeExpired:              false,
 			ServeExpiredTTL:           86400,
 			ServeExpiredClientTimeout: 1800,
 
@@ -1429,6 +1431,9 @@ func parseNameServerPolicy(nsPolicy *orderedmap.OrderedMap[string, any], adapter
 	return policy, nil
 }
 
+// maxServeExpiredTTL caps dns.serve-expired-ttl at 30 days; 0 means no limit.
+const maxServeExpiredTTL = 30 * 24 * 60 * 60
+
 func parseDNS(rawCfg *RawConfig, ruleProviders map[string]P.RuleProvider) (*DNS, error) {
 	cfg := rawCfg.DNS
 	if cfg.Enable && len(cfg.NameServer) == 0 {
@@ -1437,6 +1442,13 @@ func parseDNS(rawCfg *RawConfig, ruleProviders map[string]P.RuleProvider) (*DNS,
 
 	if cfg.RespectRules && len(cfg.ProxyServerNameserver) == 0 {
 		return nil, fmt.Errorf("if “respect-rules” is turned on, “proxy-server-nameserver” cannot be empty")
+	}
+
+	if cfg.ServeExpiredTTL > maxServeExpiredTTL {
+		return nil, fmt.Errorf("dns.serve-expired-ttl must be at most %d seconds, got %d", maxServeExpiredTTL, cfg.ServeExpiredTTL)
+	}
+	if maxTimeout := uint(resolver.DefaultDNSTimeout.Milliseconds()); cfg.ServeExpiredClientTimeout > maxTimeout {
+		return nil, fmt.Errorf("dns.serve-expired-client-timeout must be at most %d milliseconds (the DNS query timeout), got %d", maxTimeout, cfg.ServeExpiredClientTimeout)
 	}
 
 	dnsCfg := &DNS{
