@@ -37,6 +37,17 @@ func benchmarkTracker(b *testing.B, user string) {
 func BenchmarkTrackerReadWrite(b *testing.B) {
 	b.Run("anonymous", func(b *testing.B) { benchmarkTracker(b, "") })
 	b.Run("user", func(b *testing.B) { benchmarkTracker(b, "alice") })
+	// a user with a quota and a speed limit too high to ever wait: the cost
+	// of the limit bookkeeping
+	b.Run("limited", func(b *testing.B) {
+		um := statistic.DefaultManager.Users()
+		l := statistic.UserLimit{Inbound: "bench", User: "limited", SpeedUp: 1 << 50, SpeedDown: 1 << 50, Quota: 1 << 60}
+		if err := um.SetLimit(l); err != nil {
+			b.Fatal(err)
+		}
+		defer um.DeleteLimit(l.Key())
+		benchmarkTracker(b, "limited")
+	})
 }
 
 // BenchmarkTrackerNew measures opening and closing a tracked connection.

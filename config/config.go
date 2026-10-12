@@ -40,6 +40,7 @@ import (
 	RP "github.com/metacubex/mihomo/rules/provider"
 	RW "github.com/metacubex/mihomo/rules/wrapper"
 	T "github.com/metacubex/mihomo/tunnel"
+	"github.com/metacubex/mihomo/tunnel/statistic"
 
 	"golang.org/x/exp/slices"
 )
@@ -217,6 +218,7 @@ type Config struct {
 	Tunnels       []LC.Tunnel
 	Sniffer       *sniffer.Config
 	TLS           *TLS
+	UserLimits    []statistic.UserLimit
 }
 
 type RawCors struct {
@@ -466,6 +468,7 @@ type RawConfig struct {
 	Rule          []string                  `yaml:"rules" json:"rule"`
 	SubRules      map[string][]string       `yaml:"sub-rules" json:"sub-rules"`
 	Listeners     []map[string]any          `yaml:"listeners" json:"listeners"`
+	UserLimits    []map[string]any          `yaml:"user-limits" json:"user-limits"`
 	Hosts         map[string]any            `yaml:"hosts" json:"hosts"`
 	DNS           RawDNS                    `yaml:"dns" json:"dns"`
 	NTP           RawNTP                    `yaml:"ntp" json:"ntp"`
@@ -708,6 +711,12 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 		return nil, err
 	}
 	config.Listeners = listeners
+
+	userLimits, err := parseUserLimits(rawCfg.UserLimits, listeners)
+	if err != nil {
+		return nil, err
+	}
+	config.UserLimits = userLimits
 
 	log.Infoln("Geodata Loader mode: %s", geodata.LoaderName())
 	log.Infoln("Geosite Matcher implementation: %s", geodata.SiteMatcherName())
@@ -1043,6 +1052,29 @@ func parseListeners(cfg *RawConfig) (listeners map[string]C.InboundListener, err
 
 	}
 	return
+}
+
+// parseUserLimits parses the `user-limits` section. A limit for an inbound
+// that is not a listener of the configuration (nor a built-in DEFAULT-*
+// inbound) is kept, with a warning: the name may come from an embedder.
+func parseUserLimits(raw []map[string]any, listeners map[string]C.InboundListener) ([]statistic.UserLimit, error) {
+	limits := make([]statistic.UserLimit, 0, len(raw))
+	seen := make(map[statistic.UserKey]struct{}, len(raw))
+	for index, mapping := range raw {
+		l, err := statistic.ParseUserLimit(mapping)
+		if err != nil {
+			return nil, fmt.Errorf("user-limits %d: %w", index, err)
+		}
+		if _, dup := seen[l.Key()]; dup {
+			return nil, fmt.Errorf("user-limits %d: duplicate limit for user %q of inbound %q", index, l.User, l.Inbound)
+		}
+		seen[l.Key()] = struct{}{}
+		if _, ok := listeners[l.Inbound]; !ok && !strings.HasPrefix(l.Inbound, "DEFAULT-") {
+			log.Warnln("user-limits %d: inbound %q is not a listener of this configuration", index, l.Inbound)
+		}
+		limits = append(limits, l)
+	}
+	return limits, nil
 }
 
 func parseRuleProviders(cfg *RawConfig) (ruleProviders map[string]P.RuleProvider, err error) {

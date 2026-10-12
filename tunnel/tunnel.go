@@ -464,6 +464,13 @@ func handleUDPConn(packet C.PacketAdapter) {
 				return nil, nil, err
 			}
 
+			// the user's limits are checked before the outbound is dialed
+			admission, err := statistic.DefaultManager.Admit(metadata)
+			if err != nil {
+				logRejected(metadata, err)
+				return nil, nil, err
+			}
+
 			dialMetadata := metadata.Pure()
 			ctx, cancel := context.WithTimeout(context.Background(), C.DefaultUDPTimeout)
 			defer cancel()
@@ -473,11 +480,12 @@ func handleUDPConn(packet C.PacketAdapter) {
 				logMetadataErr(metadata, rule, proxy, err)
 			})
 			if err != nil {
+				admission.Release()
 				return nil, nil, err
 			}
 			logMetadata(metadata, rule, rawPc)
 
-			pc := statistic.NewUDPTracker(rawPc, statistic.DefaultManager, metadata, rule, 0, 0, true)
+			pc := statistic.NewUDPTrackerAdmitted(rawPc, statistic.DefaultManager, metadata, rule, 0, 0, admission)
 
 			sender.AddMapping(originMetadata, dialMetadata)
 			oAddrPort := dialMetadata.AddrPort()
@@ -583,6 +591,19 @@ func handleTCPConn(connCtx C.ConnContext) {
 		return
 	}
 
+	// the user's limits are checked before the outbound is dialed
+	admission, err := statistic.DefaultManager.Admit(metadata)
+	if err != nil {
+		logRejected(metadata, err)
+		return
+	}
+	tracked := false
+	defer func() {
+		if !tracked {
+			admission.Release()
+		}
+	}()
+
 	dialMetadata := metadata
 	if len(metadata.Host) > 0 {
 		if node, ok := resolver.DefaultHosts.Search(metadata.Host, false); ok {
@@ -638,7 +659,8 @@ func handleTCPConn(connCtx C.ConnContext) {
 	}
 	logMetadata(metadata, rule, remoteConn)
 
-	remoteConn = statistic.NewTCPTracker(remoteConn, statistic.DefaultManager, metadata, rule, int64(peekLen), 0, true)
+	remoteConn = statistic.NewTCPTrackerAdmitted(remoteConn, statistic.DefaultManager, metadata, rule, int64(peekLen), 0, admission)
+	tracked = true
 	defer func(remoteConn C.Conn) {
 		_ = remoteConn.Close()
 	}(remoteConn)
@@ -648,6 +670,24 @@ func handleTCPConn(connCtx C.ConnContext) {
 	defer peekMutex.Unlock()
 	_ = conn.SetReadDeadline(time.Time{}) // reset
 	handleSocket(conn, remoteConn)
+}
+
+// logRejected logs a connection refused by the limits of its user, at most
+// once a second per user; every rejection is counted in /traffic/users.
+func logRejected(metadata *C.Metadata, err error) {
+	var limitErr *statistic.LimitError
+	if !errors.As(err, &limitErr) {
+		log.Infoln("[%s] %s --> %s rejected: %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), err)
+		return
+	}
+	if limitErr.Quiet {
+		return
+	}
+	suppressed := ""
+	if limitErr.Suppressed > 0 {
+		suppressed = fmt.Sprintf(" (and %d more since the last line)", limitErr.Suppressed)
+	}
+	log.Infoln("[%s] %s --> %s rejected by the user limits: %s%s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), limitErr.Detail, suppressed)
 }
 
 func logMetadataErr(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err error) {

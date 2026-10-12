@@ -70,6 +70,10 @@ type UserStat struct {
 	Conns      int64     `json:"conns"`
 	IPs        []UserIP  `json:"ips"`
 	LastActive time.Time `json:"lastActive"`
+	// Rejected is the number of connections refused by the user's limits,
+	// RejectReasons the same by reason (expired, quota, max-conns, max-ips).
+	Rejected      int64            `json:"rejected"`
+	RejectReasons map[string]int64 `json:"rejectReasons,omitempty"`
 }
 
 type userIPEntry struct {
@@ -90,7 +94,15 @@ type UserCounter struct {
 
 	conns atomic.Int64
 
+	// limit is the user's limit state, nil when the user has no limit.
+	limit atomic.Pointer[limitState]
+
+	rejected    atomic.Int64
+	rejectLogAt atomic.Int64 // unix nanoseconds of the last logged rejection
+	suppressed  atomic.Int64 // rejections not logged since then
+
 	mu          sync.Mutex
+	reasons     map[string]int64
 	ips         map[netip.Addr]*userIPEntry
 	drainedUp   int64 // up and down at the last drain
 	drainedDown int64
@@ -106,6 +118,20 @@ func (c *UserCounter) AddUp(n int64) { c.up.Add(n) }
 // AddDown adds n downloaded bytes.
 func (c *UserCounter) AddDown(n int64) { c.down.Add(n) }
 
+// addInitial counts the bytes a connection carried before it was tracked (a
+// peeked request), against the quota too but without waiting for the speed
+// limit.
+func (c *UserCounter) addInitial(up, down int64) {
+	if c == nil || up+down == 0 {
+		return
+	}
+	c.up.Add(up)
+	c.down.Add(down)
+	if l := c.limit.Load(); l != nil {
+		l.charge(up + down)
+	}
+}
+
 // observe moves lastActive forward when bytes moved since the last look.
 // c.mu must be held.
 func (c *UserCounter) observe(now time.Time) {
@@ -115,13 +141,19 @@ func (c *UserCounter) observe(now time.Time) {
 	}
 }
 
-// acquire registers a new connection from ip; it fails when the sweep has
-// already deleted the counter.
-func (c *UserCounter) acquire(ip netip.Addr, now time.Time) bool {
+// acquire registers a new connection from ip; ok is false when the sweep has
+// already deleted the counter. With lim set, the limits are checked first and
+// a refused connection is not registered but reported in err.
+func (c *UserCounter) acquire(key UserKey, ip netip.Addr, now time.Time, lim *limitState, ipRelease time.Duration) (ok bool, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.deleted {
-		return false
+		return false, nil
+	}
+	if lim != nil {
+		if reason, detail := lim.check(c, ip, now, ipRelease); reason != "" {
+			return true, c.reject(key, reason, detail, now)
+		}
 	}
 	c.conns.Add(1)
 	c.lastActive = now
@@ -137,7 +169,27 @@ func (c *UserCounter) acquire(ip netip.Addr, now time.Time) bool {
 		e.conns++
 		e.lastSeen = now
 	}
-	return true
+	return true, nil
+}
+
+const rejectLogInterval = time.Second
+
+// reject counts a refused connection; c.mu must be held.
+func (c *UserCounter) reject(key UserKey, reason, detail string, now time.Time) *LimitError {
+	c.rejected.Add(1)
+	if c.reasons == nil {
+		c.reasons = make(map[string]int64)
+	}
+	c.reasons[reason]++
+	err := &LimitError{Key: key, Reason: reason, Detail: detail}
+	if last := c.rejectLogAt.Load(); now.UnixNano()-last < int64(rejectLogInterval) {
+		c.suppressed.Add(1)
+		err.Quiet = true
+	} else {
+		c.rejectLogAt.Store(now.UnixNano())
+		err.Suppressed = c.suppressed.Swap(0)
+	}
+	return err
 }
 
 func (c *UserCounter) release(ip netip.Addr, now time.Time) {
@@ -164,6 +216,13 @@ func (c *UserCounter) stat(key UserKey, now time.Time, drain bool) UserStat {
 		Conns:      c.conns.Load(),
 		LastActive: c.lastActive,
 		IPs:        make([]UserIP, 0, len(c.ips)),
+		Rejected:   c.rejected.Load(),
+	}
+	if len(c.reasons) > 0 {
+		s.RejectReasons = make(map[string]int64, len(c.reasons))
+		for k, v := range c.reasons {
+			s.RejectReasons[k] = v
+		}
 	}
 	if drain {
 		s.Up, s.Down = up-c.drainedUp, down-c.drainedDown
@@ -186,6 +245,15 @@ type UserManager struct {
 	IPRelease time.Duration
 
 	now func() time.Time
+
+	// the limits: lspecs are the configured ones (by user, or "*" for an
+	// inbound default), lstates the state of every user with a limit.
+	// limitsOn tells the hot paths whether there is any limit at all.
+	limitsOn atomic.Bool
+	lmu      sync.Mutex
+	lspecs   map[UserKey]limitEntry
+	lstates  map[UserKey]*limitState
+	closer   func(UserKey)
 }
 
 // NewUserManager returns an empty manager with the default timeouts.
@@ -194,19 +262,11 @@ func NewUserManager() *UserManager {
 }
 
 // Acquire returns the counter of key with a connection from ip registered on
-// it. The caller must call Release with the same ip exactly once.
+// it, without checking the user's limits (see Admit). The caller must call
+// Release with the same ip exactly once.
 func (um *UserManager) Acquire(key UserKey, ip netip.Addr) *UserCounter {
-	now := um.now()
-	for {
-		c, _ := um.counters.LoadOrCompute(key, func() (*UserCounter, bool) {
-			return &UserCounter{lastActive: now}, false
-		})
-		if c.acquire(ip, now) {
-			return c
-		}
-		// the sweep is deleting this counter right now; the next load
-		// finds the map without it
-	}
+	c, _ := um.acquire(key, ip, false)
+	return c
 }
 
 // Release unregisters a connection acquired with Acquire.
@@ -326,6 +386,9 @@ func (um *UserManager) Sweep() {
 				}
 				return old, xsync.CancelOp
 			})
+			if c.limit.Load() != nil {
+				um.pruneLimitState(key)
+			}
 		}
 		return true
 	})
@@ -340,16 +403,49 @@ type userBinding struct {
 }
 
 func bindUser(manager *Manager, metadata *C.Metadata, pushToManager bool) userBinding {
-	if !pushToManager || metadata == nil || metadata.InUser == "" || !userStatsEnabled.Load() {
+	if !pushToManager || metadata == nil || metadata.InUser == "" {
 		return userBinding{}
 	}
 	um := manager.Users()
+	if !userStatsEnabled.Load() && !um.limitsOn.Load() {
+		return userBinding{}
+	}
 	ip := metadata.SrcIP.Unmap()
 	return userBinding{
 		manager: um,
 		counter: um.Acquire(UserKey{Inbound: metadata.InName, User: metadata.InUser}, ip),
 		ip:      ip,
 	}
+}
+
+// Admission is a connection of a user admitted by its limits before the
+// outbound is dialed. It is handed to NewTCPTrackerAdmitted or
+// NewUDPTrackerAdmitted, which release it when the connection is closed; when
+// no tracker is created (the dial failed), Release must be called instead.
+type Admission struct {
+	binding userBinding
+}
+
+// Release gives back an admission that no tracker took over.
+func (a Admission) Release() { a.binding.release() }
+
+// Admit checks the limits of the inbound user of metadata and registers the
+// new connection on its counter. It fails with a *LimitError when the limits
+// refuse it. Connections without a user are always admitted.
+func (m *Manager) Admit(metadata *C.Metadata) (Admission, error) {
+	if metadata == nil || metadata.InUser == "" {
+		return Admission{}, nil
+	}
+	um := m.Users()
+	if !userStatsEnabled.Load() && !um.limitsOn.Load() {
+		return Admission{}, nil
+	}
+	ip := metadata.SrcIP.Unmap()
+	c, err := um.Admit(UserKey{Inbound: metadata.InName, User: metadata.InUser}, ip)
+	if err != nil {
+		return Admission{}, err
+	}
+	return Admission{binding: userBinding{manager: um, counter: c, ip: ip}}, nil
 }
 
 func (b userBinding) release() {

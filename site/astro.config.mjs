@@ -64,7 +64,7 @@ export default defineConfig({
 				{
 					label: 'Начало',
 					translations: { en: 'Getting started' },
-					items: [{ slug: 'start/getting-started' }, { slug: 'start/configuration' }, { slug: 'start/user-stats' }, { slug: 'start/inbound-users' }],
+					items: [{ slug: 'start/getting-started' }, { slug: 'start/configuration' }, { slug: 'start/user-stats' }, { slug: 'start/inbound-users' }, { slug: 'start/user-limits' }],
 				},
 				{
 					label: 'Проект',
