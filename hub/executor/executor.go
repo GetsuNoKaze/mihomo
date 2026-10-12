@@ -109,6 +109,7 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	updateNTP(cfg.NTP) // initialize NTP after DNS because an NTP server may be a hostname.
 	updateListeners(cfg.General, cfg.Listeners, force)
 	retireUsers(cfg.Listeners)
+	updateUserLimits(cfg.UserLimits)
 	updateTun(cfg.General) // tun should not care "force"
 	updateIPTables(cfg)
 	updateTunnels(cfg.Tunnels)
@@ -125,6 +126,15 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	updateUpdater(cfg)
 
 	resolver.ResetConnection()
+}
+
+// updateUserLimits replaces the per-user limits with those of the
+// configuration; the limits set through the API are dropped, and the quota
+// usage of a user that keeps a limit survives.
+func updateUserLimits(limits []statistic.UserLimit) {
+	if err := statistic.DefaultManager.Users().SetConfigLimits(limits); err != nil {
+		log.Errorln("user-limits: %s", err)
+	}
 }
 
 // retireUsers marks the per-user traffic counters of the listeners and users
