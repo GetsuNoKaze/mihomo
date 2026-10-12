@@ -1,3 +1,7 @@
+//go:build go1.24
+
+// http.Transport.Protocols (h2c to the test proxy) needs Go 1.24.
+
 package inbound_test
 
 import (
