@@ -344,6 +344,7 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 				} else {
 					log.Debugln("[DNS] %s --> %s", metadata.Host, ip.String())
 					metadata.DstIP = ip
+					metadata.DstIPChecked = true
 				}
 				resolved = true
 			}
