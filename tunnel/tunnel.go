@@ -722,6 +722,9 @@ func getRules(metadata *C.Metadata) []C.Rule {
 }
 
 func shouldStopRetry(err error) bool {
+	if isLocalResourceExhaustion(err) {
+		return true
+	}
 	if errors.Is(err, resolver.ErrIPNotFound) {
 		return true
 	}
