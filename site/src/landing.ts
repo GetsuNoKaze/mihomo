@@ -46,7 +46,7 @@ export const strings = {
 				},
 				{
 					title: 'Исходящие протоколы',
-					text: 'VLESS с REALITY, Trojan, Shadowsocks, Hysteria2, TUIC, AnyTLS, TrustTunnel, Snell, WireGuard и другие. VMess пока есть, но его планируем убрать.',
+					text: 'VLESS с REALITY, Trojan, Shadowsocks, Hysteria2, TUIC, AnyTLS, TrustTunnel, Snell, WireGuard и другие.',
 				},
 				{
 					title: 'TUN',
@@ -136,7 +136,7 @@ export const strings = {
 				},
 				{
 					title: 'Outbound protocols',
-					text: 'VLESS with REALITY, Trojan, Shadowsocks, Hysteria2, TUIC, AnyTLS, TrustTunnel, Snell, WireGuard and more. VMess is still there, but we plan to remove it.',
+					text: 'VLESS with REALITY, Trojan, Shadowsocks, Hysteria2, TUIC, AnyTLS, TrustTunnel, Snell, WireGuard and more.',
 				},
 				{
 					title: 'TUN',
