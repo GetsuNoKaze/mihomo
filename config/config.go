@@ -520,11 +520,13 @@ func DefaultRawConfig() *RawConfig {
 			FakeIPRange:    "198.18.0.1/16",
 			FakeIPTTL:      1,
 
-			// Citrus: serving expired answers is opt-in; the other two
-			// values apply once serve-expired is turned on.
-			ServeExpired:              false,
-			ServeExpiredTTL:           86400,
-			ServeExpiredClientTimeout: 1800,
+			// The defaults keep the resolver's existing behaviour: an expired
+			// entry is answered at once (TTL 1) and refreshed in the background,
+			// with no age limit. Set a TTL and client timeout to opt into the
+			// RFC 8767 style, or serve-expired: false to never answer stale.
+			ServeExpired:              true,
+			ServeExpiredTTL:           0,
+			ServeExpiredClientTimeout: 0,
 
 			FallbackFilter: RawFallbackFilter{
 				GeoIP:     true,

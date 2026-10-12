@@ -7,15 +7,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseDNSServeExpiredDefaultsOff(t *testing.T) {
+// The defaults keep the resolver's pre-existing behaviour: answer stale at once,
+// refresh in the background, no age limit.
+func TestParseDNSServeExpiredDefaultsKeepExistingBehaviour(t *testing.T) {
 	raw, err := UnmarshalRawConfig([]byte("mode: rule\n"))
 	require.NoError(t, err)
 
 	dns, err := parseDNS(raw, nil)
 	require.NoError(t, err)
-	require.False(t, dns.ServeExpired)
-	require.Equal(t, 24*time.Hour, dns.ServeExpiredTTL)
-	require.Equal(t, 1800*time.Millisecond, dns.ServeExpiredClientTimeout)
+	require.True(t, dns.ServeExpired)
+	require.Equal(t, time.Duration(0), dns.ServeExpiredTTL)
+	require.Equal(t, time.Duration(0), dns.ServeExpiredClientTimeout)
 }
 
 func TestParseDNSServeExpired(t *testing.T) {
