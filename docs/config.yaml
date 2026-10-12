@@ -1982,6 +1982,15 @@ listeners:
     # proxy: proxy # 如果不为空则直接将该入站流量交由指定 proxy 处理 (当 proxy 不为空时，这里的 proxy 名称必须合法，否则会出错)
     password: vlmpIPSyHH6f4S8WVPdRIHIlzmB+GIRfoH3aNJ/t9Gg=
     cipher: 2022-blake3-aes-256-gcm
+    # users: # 多用户 Shadowsocks 2022 (EIH)，仅支持 2022-blake3-aes-128-gcm / aes-256-gcm / aes-128-ccm / aes-256-ccm
+    #        # 设置后 password 为服务端密钥 (iPSK)，每个用户使用自己的密钥 (uPSK)，长度与 password 相同 (128: 16 字节, 256: 32 字节, base64)
+    #        # 用户名写入 IN-USER，可用于 IN-USER 规则与按用户统计；客户端 password 填 "iPSK:uPSK"
+    #        # 例: password: "vlmpIPSyHH6f4S8WVPdRIHIlzmB+GIRfoH3aNJ/t9Gg=:4w0GKJ9U3Ox7CIXGU4A3LDQAqP6qrp/tUi/ilpOR9p4="
+    #        # 修改 users 会重建该监听器 (重新绑定端口)
+    #   - name: alice
+    #     password: 4w0GKJ9U3Ox7CIXGU4A3LDQAqP6qrp/tUi/ilpOR9p4=
+    #   - name: bob
+    #     password: 8m1YtiNyvAhdhbS8mSPg0oPp0xV7NpByOXH+P9WITOY=
     # simple-obfs:
     #   enable: false # 设置为true时开启
     #   mode: http # Available: http, tls
