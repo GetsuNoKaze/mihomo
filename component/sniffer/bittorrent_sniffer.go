@@ -33,6 +33,37 @@ const (
 	trackerConnectMinSize = 16
 )
 
+// bitTorrentServerFirstPorts are the well-known ports of protocols in which the
+// server speaks first. The client sends nothing until it has heard the server,
+// so sniffing them can only wait for the TCP timeout and then give up. They
+// are left out of the default port range; listing them in ports explicitly
+// still sniffs them.
+var bitTorrentServerFirstPorts = []uint16{
+	21,   // FTP
+	22,   // SSH
+	23,   // Telnet
+	25,   // SMTP
+	110,  // POP3
+	119,  // NNTP
+	143,  // IMAP
+	587,  // SMTP submission
+	3306, // MySQL
+	5900, // VNC
+}
+
+// bitTorrentDefaultPorts is 1-65535 without bitTorrentServerFirstPorts
+func bitTorrentDefaultPorts() utils.IntRanges[uint16] {
+	var ports utils.IntRanges[uint16]
+	start := uint16(1)
+	for _, port := range bitTorrentServerFirstPorts {
+		if port > start {
+			ports = append(ports, utils.NewRange[uint16](start, port-1))
+		}
+		start = port + 1
+	}
+	return append(ports, utils.NewRange[uint16](start, 65535))
+}
+
 var _ sniffer.ProtocolSniffer = (*BitTorrentSniffer)(nil)
 
 type BitTorrentSniffer struct {
@@ -44,7 +75,7 @@ func NewBitTorrentSniffer(snifferConfig SnifferConfig) (*BitTorrentSniffer, erro
 	if len(ports) == 0 {
 		// BitTorrent peers listen on arbitrary ports, so there is no sensible
 		// port whitelist to default to
-		ports = utils.IntRanges[uint16]{utils.NewRange[uint16](1, 65535)}
+		ports = bitTorrentDefaultPorts()
 	}
 	return &BitTorrentSniffer{
 		BaseSniffer: NewBaseSniffer(ports, C.ALLNet),

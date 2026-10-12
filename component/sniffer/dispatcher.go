@@ -361,21 +361,34 @@ func (sd *Dispatcher) sniffDomain(conn *N.BufferedConn, metadata *C.Metadata) (s
 	return "", SnifferConfig{}, ErrorSniffFailed
 }
 
+// protocolSniffTimeout bounds how long protocol sniffing waits for a TCP
+// client. Unlike domain sniffing it runs on every port by default, including
+// those of protocols where the server speaks first and the client sends
+// nothing, so it must give up quickly. Every protocol it detects is client
+// first, the BitTorrent handshake is written as soon as the connection is up,
+// and on the local side of TUN or a local proxy that is well under this bound.
+const protocolSniffTimeout = 300 * time.Millisecond
+
 // sniffStreamProtocol tags the metadata with the application protocol of a TCP
 // connection. Unlike a domain, nothing downstream depends on the result, so a
-// miss is neither reported to the caller nor counted towards skipList.
+// miss is neither reported to the caller nor counted towards skipList, and a
+// client that has sent nothing within protocolSniffTimeout is let through
+// untagged.
 func (sd *Dispatcher) sniffStreamProtocol(conn *N.BufferedConn, metadata *C.Metadata) {
-	// The initial byte has its own window because client data may not have
-	// arrived yet. When domain sniffing follows, it finds the data buffered.
-	_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
-	_, err := conn.Peek(1)
-	_ = conn.SetReadDeadline(time.Time{})
-	if err != nil {
-		log.Debugln("[Sniffer] [%s] the data length not enough, error: %v", metadata.DstIP, err)
-		return
+	// When domain sniffing ran first, the data is already buffered.
+	deadline := time.Now().Add(protocolSniffTimeout)
+	if conn.Buffered() == 0 {
+		_ = conn.SetReadDeadline(deadline)
+		_, err := conn.Peek(1)
+		_ = conn.SetReadDeadline(time.Time{})
+		if err != nil {
+			log.Debugln("[Sniffer] [%s] no data for protocol sniffing, error: %v", metadata.DstIP, err)
+			return
+		}
+		// the rest of a header split across segments gets a fresh window
+		deadline = time.Now().Add(protocolSniffTimeout)
 	}
 
-	deadline := time.Now().Add(1 * time.Second)
 	for _, current := range sd.protocolSniffers {
 		if !snifferSupportsNetwork(current, C.TCP) || !current.SupportPort(metadata.DstPort) {
 			continue
