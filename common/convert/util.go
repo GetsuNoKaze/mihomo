@@ -337,12 +337,21 @@ func handleTLSShareLinkQuery(query url.Values, proxy map[string]any) {
 		echConfigList = strings.ReplaceAll(echConfigList, " ", "+")
 		echOpts := map[string]any{"enable": true}
 		if strings.Contains(echConfigList, "://") {
-			// "https://1.1.1.1/dns-query" or "example.com+https://1.1.1.1/dns-query":
-			// query the ECH config of the server name or of example.com
-			// TODO: query it through the given DoH server instead of the default resolver
-			if name, _, ok := strings.Cut(echConfigList, "+"); ok && name != "" && !strings.Contains(name, "://") {
-				echOpts["query-server-name"] = name
+			// "https://1.1.1.1/dns-query" or "example.com+https://1.1.1.1/dns-query"
+			// (also udp://, h2c://): query the HTTPS record of the server name
+			// or of example.com through that DNS server
+			server := echConfigList
+			if name, rest, ok := strings.Cut(echConfigList, "+"); ok && !strings.Contains(name, "://") {
+				if name != "" {
+					echOpts["query-server-name"] = name
+				}
+				server = rest
 			}
+			if rest, ok := strings.CutPrefix(server, "h2c://"); ok {
+				// Xray sends h2c DoH plaintext for its routing to add TLS; we do TLS ourselves
+				server = "https://" + rest
+			}
+			echOpts["query-server"] = server
 		} else {
 			echOpts["config"] = echConfigList // base64 ECHConfigList
 		}
