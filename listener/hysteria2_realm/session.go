@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"sync"
 	"time"
+
+	"github.com/metacubex/mihomo/common/httputils"
 )
 
 const (
@@ -45,7 +47,7 @@ type serverConfig struct {
 	realmToken     string
 	maxRealms      int
 	maxRealmsPerIP int
-	proxyHeader    string
+	realIP         httputils.RealIP
 	realmIDPattern *regexp.Regexp
 }
 
@@ -57,7 +59,7 @@ type server struct {
 	realmToken     string
 	maxRealms      int
 	maxRealmsPerIP int
-	proxyHeader    string
+	realIP         httputils.RealIP
 	realmIDPattern *regexp.Regexp
 }
 
@@ -73,7 +75,7 @@ func newServer(cfg serverConfig) *server {
 		realmToken:     cfg.realmToken,
 		maxRealms:      cfg.maxRealms,
 		maxRealmsPerIP: cfg.maxRealmsPerIP,
-		proxyHeader:    cfg.proxyHeader,
+		realIP:         cfg.realIP,
 		realmIDPattern: pat,
 	}
 }

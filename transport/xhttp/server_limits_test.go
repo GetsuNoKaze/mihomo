@@ -53,7 +53,7 @@ func TestServerHandlerPendingSessionCap(t *testing.T) {
 	read := make(chan struct{})
 	handler, err := NewServerHandler(ServerOption{
 		Config: Config{Path: "/xhttp", Mode: "packet-up"},
-		ConnHandler: func(conn net.Conn) {
+		ConnHandler: func(conn net.Conn, _ *http.Request) {
 			_, _ = io.ReadFull(conn, make([]byte, 4))
 			close(read)
 			_, _ = io.Copy(io.Discard, conn)
@@ -92,7 +92,7 @@ func TestServerHandlerPendingSessionTimeout(t *testing.T) {
 	readErr := make(chan error, 1)
 	handler, err := NewServerHandler(ServerOption{
 		Config: Config{Path: "/xhttp", Mode: "packet-up"},
-		ConnHandler: func(conn net.Conn) {
+		ConnHandler: func(conn net.Conn, _ *http.Request) {
 			_, err := conn.Read(make([]byte, 1))
 			readErr <- err
 			_ = conn.Close()
@@ -125,7 +125,7 @@ func TestServerHandlerActiveSessionNotReaped(t *testing.T) {
 	got := make(chan []byte, 1)
 	handler, err := NewServerHandler(ServerOption{
 		Config: Config{Path: "/xhttp", Mode: "packet-up"},
-		ConnHandler: func(conn net.Conn) {
+		ConnHandler: func(conn net.Conn, _ *http.Request) {
 			b := make([]byte, 4)
 			_, _ = io.ReadFull(conn, b)
 			b2, _ := io.ReadAll(conn)

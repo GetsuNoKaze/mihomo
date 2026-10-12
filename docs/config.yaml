@@ -2489,6 +2489,14 @@ listeners:
     #   # rate-limit: 0 # fallback 双向转发限速，单位 bit/s；0 表示不限速
     ### 注意，对于vless listener, 如果 "allow-insecure" 不为 true, 至少需要填写 “certificate和private-key” 或 “shadow-tls” 或 “res-tls” 或 “jls-config” 或 “reality-config” 或 “decryption” 的其中一项 ###
     # allow-insecure: false # 是否允许不开启tls加密（注意：仅用于有 nginx, caddy 前置的情况）
+    # # Real client IP behind a reverse proxy or CDN (ws, grpc and xhttp only): the source address of
+    # # the connection (logs, SRC-IP rules, IP filters, auth events) is taken from this header.
+    # trusted-proxy-header: "" # header to read real client IP from (e.g. X-Forwarded-For, X-Real-IP, CF-Connecting-IP)
+    # # The header is believed only when the TCP peer is in this list; empty (the default) = never.
+    # # CIDRs, single addresses, "loopback" (127.0.0.0/8, ::1) and "private" (10/8, 172.16/12, 192.168/16, fc00::/7).
+    # # X-Forwarded-For is read from the right, skipping trusted proxies (like nginx real_ip_recursive),
+    # # so an address the client puts at its left is ignored. For a CDN, list the CDN's ranges.
+    # trusted-proxies: [loopback]
 
   - name: anytls-in-1
     type: anytls
@@ -2662,6 +2670,9 @@ listeners:
     #   password: "example"
     ### 注意，对于trojan listener, 如果 "allow-insecure" 不为 true, 至少需要填写 “certificate和private-key” 或 “shadow-tls” 或 “res-tls” 或 “jls-config” 或 “reality-config” 或 “ss-option” 的其中一项 ###
     # allow-insecure: false # 是否允许不开启tls加密（注意：仅用于有 nginx, caddy 前置的情况）
+    # # Real client IP behind a reverse proxy or CDN (ws and grpc only), as for the vless listener above.
+    # trusted-proxy-header: "" # header to read real client IP from (e.g. X-Forwarded-For, X-Real-IP, CF-Connecting-IP)
+    # trusted-proxies: [loopback] # TCP peers whose header is believed; empty (the default) = never
 
   - name: hysteria2-in-1
     type: hysteria2
@@ -2727,6 +2738,10 @@ listeners:
     max-realms: 65536 # maximum total realms (0 = unlimited)
     max-realms-per-ip: 4 # maximum realms per client IP (0 = unlimited)
     trusted-proxy-header: "" # header to read real client IP from (e.g. X-Forwarded-For)
+    # # TCP peers whose trusted-proxy-header is believed, read from the right like the vless listener.
+    # # Unlike vless/trojan, empty keeps the old behaviour: the leftmost value is believed from any
+    # # client, which lets a client dodge max-realms-per-ip; set this when trusted-proxy-header is used.
+    # trusted-proxies: [loopback]
     realm-name-pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" # regex realm names must match
     # # 下面内容如果配置， realm 将通过 TLS 提供 HTTPS 服务；否则提供明文 HTTP
     # certificate: ./server.crt # 证书 PEM 格式，或者 证书的路径
