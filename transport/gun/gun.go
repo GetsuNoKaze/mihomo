@@ -21,7 +21,7 @@ import (
 	"github.com/metacubex/mihomo/common/pool"
 	tlsC "github.com/metacubex/mihomo/component/tls"
 	C "github.com/metacubex/mihomo/constant"
-	"github.com/metacubex/mihomo/transport/vmess"
+	"github.com/metacubex/mihomo/transport/v2ray"
 
 	"github.com/metacubex/http"
 )
@@ -260,7 +260,7 @@ func (t *Transport) Close() error {
 	return nil
 }
 
-func NewTransport(dialFn DialFn, tlsConfig *vmess.TLSConfig, gunCfg *Config) *Transport {
+func NewTransport(dialFn DialFn, tlsConfig *v2ray.TLSConfig, gunCfg *Config) *Transport {
 	dialFunc := func(ctx context.Context, network, addr string) (net.Conn, error) {
 		ctx, cancel := context.WithTimeout(ctx, C.DefaultTLSTimeout)
 		defer cancel()
@@ -273,7 +273,7 @@ func NewTransport(dialFn DialFn, tlsConfig *vmess.TLSConfig, gunCfg *Config) *Tr
 			return pconn, nil
 		}
 
-		conn, err := vmess.StreamTLSConn(ctx, pconn, tlsConfig)
+		conn, err := v2ray.StreamTLSConn(ctx, pconn, tlsConfig)
 		if err != nil {
 			_ = pconn.Close()
 			return nil, err
@@ -458,7 +458,7 @@ func (c *Client) newTransportLocked() *Transport {
 	return transport
 }
 
-func StreamGunWithConn(conn net.Conn, tlsConfig *vmess.TLSConfig, gunCfg *Config) (net.Conn, error) {
+func StreamGunWithConn(conn net.Conn, tlsConfig *v2ray.TLSConfig, gunCfg *Config) (net.Conn, error) {
 	dialFn := func(ctx context.Context, network, addr string) (net.Conn, error) {
 		return conn, nil
 	}

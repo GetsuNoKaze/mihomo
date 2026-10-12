@@ -1,4 +1,4 @@
-package vmess
+package v2ray
 
 import (
 	"bufio"

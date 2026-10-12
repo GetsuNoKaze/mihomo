@@ -7,7 +7,7 @@ import (
 	"runtime"
 
 	"github.com/metacubex/mihomo/transport/tuic/common"
-	"github.com/metacubex/mihomo/transport/vmess"
+	"github.com/metacubex/mihomo/transport/v2ray"
 
 	"github.com/metacubex/http"
 	"github.com/metacubex/quic-go"
@@ -15,7 +15,7 @@ import (
 	"github.com/metacubex/tls"
 )
 
-func (c *Client) quicRoundTripper(tlsConfig *vmess.TLSConfig, congestionControlName string, cwnd int, bbrProfile string) error {
+func (c *Client) quicRoundTripper(tlsConfig *v2ray.TLSConfig, congestionControlName string, cwnd int, bbrProfile string) error {
 	stdConfig, err := tlsConfig.ToStdConfig()
 	if err != nil {
 		return err

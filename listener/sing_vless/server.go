@@ -21,8 +21,8 @@ import (
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/ntp"
 	"github.com/metacubex/mihomo/transport/gun"
+	"github.com/metacubex/mihomo/transport/v2ray"
 	"github.com/metacubex/mihomo/transport/vless/encryption"
-	mihomoVMess "github.com/metacubex/mihomo/transport/vmess"
 	"github.com/metacubex/mihomo/transport/xhttp"
 
 	"github.com/metacubex/http"
@@ -181,7 +181,7 @@ func New(config LC.VlessServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
 	if config.WsPath != "" {
 		httpMux := http.NewServeMux()
 		httpMux.HandleFunc(config.WsPath, func(w http.ResponseWriter, r *http.Request) {
-			conn, err := mihomoVMess.StreamUpgradedWebsocketConn(w, r)
+			conn, err := v2ray.StreamUpgradedWebsocketConn(w, r)
 			if err != nil {
 				http.Error(w, err.Error(), 500)
 				return
