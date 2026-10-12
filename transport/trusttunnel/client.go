@@ -16,7 +16,7 @@ import (
 	"github.com/metacubex/mihomo/common/once"
 	"github.com/metacubex/mihomo/component/dialer"
 	C "github.com/metacubex/mihomo/constant"
-	"github.com/metacubex/mihomo/transport/vmess"
+	"github.com/metacubex/mihomo/transport/v2ray"
 
 	"github.com/metacubex/http"
 	"github.com/metacubex/http/httptrace"
@@ -31,7 +31,7 @@ type ClientOptions struct {
 	Server                string
 	Username              string
 	Password              string
-	TLSConfig             *vmess.TLSConfig
+	TLSConfig             *v2ray.TLSConfig
 	QUIC                  bool
 	QUICCongestionControl string
 	QUICCwnd              int
@@ -87,7 +87,7 @@ func NewClient(ctx context.Context, options ClientOptions) (client *Client, err 
 	return client, nil
 }
 
-func (c *Client) h2RoundTripper(tlsConfig *vmess.TLSConfig) {
+func (c *Client) h2RoundTripper(tlsConfig *v2ray.TLSConfig) {
 	// use h2c mode to disallow the net/http fallback to http1.1
 	//
 	// Note that this usage is only applicable to our own net/http fork.
@@ -101,7 +101,7 @@ func (c *Client) h2RoundTripper(tlsConfig *vmess.TLSConfig) {
 			if err != nil {
 				return nil, err
 			}
-			tlsConn, err := vmess.StreamTLSConn(ctx, conn, tlsConfig)
+			tlsConn, err := v2ray.StreamTLSConn(ctx, conn, tlsConfig)
 			if err != nil {
 				_ = conn.Close()
 				return nil, err

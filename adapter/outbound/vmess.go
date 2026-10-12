@@ -23,7 +23,7 @@ import (
 	"github.com/metacubex/mihomo/transport/mkcp"
 	"github.com/metacubex/mihomo/transport/restls"
 	"github.com/metacubex/mihomo/transport/shadowtls"
-	mihomoVMess "github.com/metacubex/mihomo/transport/vmess"
+	"github.com/metacubex/mihomo/transport/v2ray"
 
 	"github.com/metacubex/http"
 	vmess "github.com/metacubex/sing-vmess"
@@ -142,40 +142,11 @@ func (o MekyaOptions) Build() mekya.Config {
 	}
 }
 
-type HTTPOptions struct {
-	Method  string              `proxy:"method,omitempty"`
-	Path    []string            `proxy:"path,omitempty"`
-	Headers map[string][]string `proxy:"headers,omitempty"`
-}
-
-type HTTP2Options struct {
-	Host []string `proxy:"host,omitempty"`
-	Path string   `proxy:"path,omitempty"`
-}
-
-type GrpcOptions struct {
-	GrpcServiceName string `proxy:"grpc-service-name,omitempty"`
-	GrpcUserAgent   string `proxy:"grpc-user-agent,omitempty"`
-	PingInterval    int    `proxy:"ping-interval,omitempty"`
-	MaxConnections  int    `proxy:"max-connections,omitempty"`
-	MinStreams      int    `proxy:"min-streams,omitempty"`
-	MaxStreams      int    `proxy:"max-streams,omitempty"`
-}
-
-type WSOptions struct {
-	Path                     string            `proxy:"path,omitempty"`
-	Headers                  map[string]string `proxy:"headers,omitempty"`
-	MaxEarlyData             int               `proxy:"max-early-data,omitempty"`
-	EarlyDataHeaderName      string            `proxy:"early-data-header-name,omitempty"`
-	V2rayHttpUpgrade         bool              `proxy:"v2ray-http-upgrade,omitempty"`
-	V2rayHttpUpgradeFastOpen bool              `proxy:"v2ray-http-upgrade-fast-open,omitempty"`
-}
-
 func (v *Vmess) StreamConnContext(ctx context.Context, c net.Conn, metadata *C.Metadata) (_ net.Conn, err error) {
 	switch v.option.Network {
 	case "ws":
 		host, port, _ := net.SplitHostPort(v.addr)
-		wsOpts := &mihomoVMess.WebsocketConfig{
+		wsOpts := &v2ray.WebsocketConfig{
 			Host:                     host,
 			Port:                     port,
 			Path:                     v.option.WSOpts.Path,
@@ -203,7 +174,7 @@ func (v *Vmess) StreamConnContext(ctx context.Context, c net.Conn, metadata *C.M
 			}
 
 			if v.shadowTLSConfig != nil || v.restlsConfig != nil || v.jlsConfig != nil {
-				c, err = mihomoVMess.StreamTLSConn(ctx, c, &mihomoVMess.TLSConfig{
+				c, err = v2ray.StreamTLSConn(ctx, c, &v2ray.TLSConfig{
 					Host:              serverName,
 					SkipCertVerify:    v.option.SkipCertVerify,
 					NameCertVerify:    v.option.NameCertVerify,
@@ -242,7 +213,7 @@ func (v *Vmess) StreamConnContext(ctx context.Context, c net.Conn, metadata *C.M
 				}
 			}
 		}
-		c, err = mihomoVMess.StreamWebsocketConn(ctx, c, wsOpts)
+		c, err = v2ray.StreamWebsocketConn(ctx, c, wsOpts)
 	case "http":
 		// readability first, so just copy default TLS logic
 		c, err = v.streamTLSConn(ctx, c, false)
@@ -251,26 +222,26 @@ func (v *Vmess) StreamConnContext(ctx context.Context, c net.Conn, metadata *C.M
 		}
 
 		host, _, _ := net.SplitHostPort(v.addr)
-		httpOpts := &mihomoVMess.HTTPConfig{
+		httpOpts := &v2ray.HTTPConfig{
 			Host:    host,
 			Method:  v.option.HTTPOpts.Method,
 			Path:    v.option.HTTPOpts.Path,
 			Headers: v.option.HTTPOpts.Headers,
 		}
 
-		c = mihomoVMess.StreamHTTPConn(c, httpOpts)
+		c = v2ray.StreamHTTPConn(c, httpOpts)
 	case "h2":
 		c, err = v.streamTLSConn(ctx, c, true)
 		if err != nil {
 			return nil, err
 		}
 
-		h2Opts := &mihomoVMess.H2Config{
+		h2Opts := &v2ray.H2Config{
 			Hosts: v.option.HTTP2Opts.Host,
 			Path:  v.option.HTTP2Opts.Path,
 		}
 
-		c, err = mihomoVMess.StreamH2Conn(ctx, c, h2Opts)
+		c, err = v2ray.StreamH2Conn(ctx, c, h2Opts)
 	case "grpc":
 		break // already handle in dialContext
 	case "mekya":
@@ -347,7 +318,7 @@ func (v *Vmess) streamTLSConn(ctx context.Context, conn net.Conn, isH2 bool) (ne
 	if v.option.TLS {
 		host, _, _ := net.SplitHostPort(v.addr)
 
-		tlsOpts := mihomoVMess.TLSConfig{
+		tlsOpts := v2ray.TLSConfig{
 			Host:              host,
 			SkipCertVerify:    v.option.SkipCertVerify,
 			NameCertVerify:    v.option.NameCertVerify,
@@ -373,7 +344,7 @@ func (v *Vmess) streamTLSConn(ctx context.Context, conn net.Conn, isH2 bool) (ne
 			tlsOpts.Host = v.option.ServerName
 		}
 
-		return mihomoVMess.StreamTLSConn(ctx, conn, &tlsOpts)
+		return v2ray.StreamTLSConn(ctx, conn, &tlsOpts)
 	}
 
 	return conn, nil
@@ -615,9 +586,9 @@ func NewVmess(option VmessOption) (*Vmess, error) {
 		if option.ServerName == "" {
 			gunConfig.Host = v.addr
 		}
-		var tlsConfig *mihomoVMess.TLSConfig
+		var tlsConfig *v2ray.TLSConfig
 		if option.TLS {
-			tlsConfig = &mihomoVMess.TLSConfig{
+			tlsConfig = &v2ray.TLSConfig{
 				Host:              option.ServerName,
 				SkipCertVerify:    option.SkipCertVerify,
 				NameCertVerify:    option.NameCertVerify,
