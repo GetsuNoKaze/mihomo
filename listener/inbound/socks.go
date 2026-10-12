@@ -29,6 +29,7 @@ func (o SocksOption) Equal(config C.InboundConfig) bool {
 
 type Socks struct {
 	*Base
+	authStoreUsers
 	config *SocksOption
 	udp    bool
 	stl    []*socks.Listener
@@ -41,9 +42,10 @@ func NewSocks(options *SocksOption) (*Socks, error) {
 		return nil, err
 	}
 	return &Socks{
-		Base:   base,
-		config: options,
-		udp:    options.UDP,
+		Base:           base,
+		config:         options,
+		udp:            options.UDP,
+		authStoreUsers: newAuthStoreUsers(base.Name(), options.Users),
 	}, nil
 }
 
@@ -89,7 +91,7 @@ func (s *Socks) Listen(tunnel C.Tunnel) error {
 		config := LC.AuthServer{
 			Enable:         true,
 			Listen:         addr,
-			AuthStore:      s.config.Users.GetAuthStore(),
+			AuthStore:      s.authStore(),
 			Certificate:    s.config.Certificate,
 			PrivateKey:     s.config.PrivateKey,
 			ClientAuthType: s.config.ClientAuthType,
@@ -116,3 +118,14 @@ func (s *Socks) Listen(tunnel C.Tunnel) error {
 }
 
 var _ C.InboundListener = (*Socks)(nil)
+
+// SameExceptUsers implements constant.InboundUserUpdater: only between
+// configurations that both have users of their own (no users means the
+// global authentication, `users: []` turns it off).
+func (s *Socks) SameExceptUsers(config C.InboundConfig) bool {
+	other, ok := config.(*SocksOption)
+	return ok && s.store != nil && len(other.Users) > 0 && equalExceptUsers(s.config, other)
+}
+
+var _ C.InboundUserUpdater = (*Socks)(nil)
+var _ C.InboundUserLister = (*Socks)(nil)

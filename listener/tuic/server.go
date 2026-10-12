@@ -13,11 +13,13 @@ import (
 	"github.com/metacubex/mihomo/component/ech"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
+	"github.com/metacubex/mihomo/listener/inbounduser"
 	"github.com/metacubex/mihomo/listener/sing"
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/ntp"
 	"github.com/metacubex/mihomo/transport/socks5"
 	"github.com/metacubex/mihomo/transport/tuic"
+	v5 "github.com/metacubex/mihomo/transport/tuic/v5"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/metacubex/quic-go"
@@ -32,6 +34,7 @@ type Listener struct {
 	config       LC.TuicServer
 	udpListeners []net.PacketConn
 	servers      []*tuic.Server
+	users        *inbounduser.Set[[16]byte]
 }
 
 func New(config LC.TuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, additions ...inbound.Addition) (*Listener, error) {
@@ -159,15 +162,12 @@ func New(config LC.TuicServer, lc C.InboundListenConfig, tunnel C.Tunnel, additi
 		CWND:                  config.CWND,
 		BBRProfile:            config.BBRProfile,
 	}
-	if len(config.Users) > 0 {
-		users := make(map[[16]byte]string)
-		for _uuid, password := range config.Users {
-			users[uuid.FromStringOrNil(_uuid)] = password
-		}
-		option.Users = users
+	option.Users, err = inbounduser.New(v5.UserKey, ConfigUsers(config.Users, true))
+	if err != nil {
+		return nil, err
 	}
 
-	sl := &Listener{false, config, nil, nil}
+	sl := &Listener{false, config, nil, nil, option.Users}
 
 	for _, addr := range strings.Split(config.Listen, ",") {
 		addr := addr
@@ -220,6 +220,45 @@ func (l *Listener) Close() error {
 		}
 	}
 	return retErr
+}
+
+// ConfigUsers converts the users of a configuration (uuid -> password). The
+// names become canonical lower-case UUIDs, the form of metadata.InUser; a
+// name that is not a UUID can never authenticate and is left out.
+func ConfigUsers(m map[string]string, warn bool) []C.InboundUser {
+	users := make([]C.InboundUser, 0, len(m))
+	for _, user := range inbounduser.FromMap(m) {
+		id, err := uuid.FromString(user.Name)
+		if err != nil {
+			if warn {
+				log.Warnln("tuic-server: user %q is not a UUID and can never authenticate", user.Name)
+			}
+			continue
+		}
+		user.Name = id.String()
+		users = append(users, user)
+	}
+	return users
+}
+
+// Users returns the current users (Name = uuid, Secret = password).
+func (l *Listener) Users() []C.InboundUser { return l.users.Users() }
+
+// ReplaceUsers swaps the users without closing the listener; the QUIC
+// connections of the removed and changed users are closed. The names are
+// stored as canonical lower-case UUIDs, the form of metadata.InUser.
+func (l *Listener) ReplaceUsers(users []C.InboundUser) (inbounduser.Change, error) {
+	if err := inbounduser.NoFlow("tuic", users); err != nil {
+		return inbounduser.Change{}, err
+	}
+	canonical := make([]C.InboundUser, len(users))
+	for i, user := range users {
+		if id, err := uuid.FromString(user.Name); err == nil {
+			user.Name = id.String()
+		}
+		canonical[i] = user
+	}
+	return l.users.Replace(canonical)
 }
 
 func (l *Listener) Config() LC.TuicServer {

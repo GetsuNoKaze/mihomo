@@ -119,3 +119,36 @@ func (s *ShadowSocks) Close() error {
 }
 
 var _ C.InboundListener = (*ShadowSocks)(nil)
+
+// Users implements constant.InboundUserUpdater
+func (s *ShadowSocks) Users() []C.InboundUser {
+	return listenerUsers(s.l, func() []C.InboundUser { return s.configUsers() })
+}
+
+// SetUsers implements constant.InboundUserUpdater
+func (s *ShadowSocks) SetUsers(users []C.InboundUser) error {
+	return setListenerUsers(s.Name(), s.l, users)
+}
+
+// SameExceptUsers implements constant.InboundUserUpdater
+func (s *ShadowSocks) SameExceptUsers(config C.InboundConfig) bool {
+	// users switch the listener to multi-user mode: without users on both
+	// sides it is not a change of users
+	other, ok := config.(*ShadowSocksOption)
+	return ok && len(s.config.Users) > 0 && len(other.Users) > 0 && equalExceptUsers(s.config, other)
+}
+
+var _ C.InboundUserUpdater = (*ShadowSocks)(nil)
+
+func (s *ShadowSocks) configUsers() []C.InboundUser {
+	users := make([]C.InboundUser, len(s.config.Users))
+	for i, user := range s.config.Users {
+		users[i] = C.InboundUser{Name: user.Name, Secret: user.Password}
+	}
+	return users
+}
+
+// InboundUsers implements constant.InboundUserLister
+func (s *ShadowSocks) InboundUsers() []string { return userNames(s.Users()) }
+
+var _ C.InboundUserLister = (*ShadowSocks)(nil)

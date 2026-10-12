@@ -12,6 +12,7 @@ import (
 	"github.com/metacubex/mihomo/component/ech"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
+	"github.com/metacubex/mihomo/listener/inbounduser"
 	"github.com/metacubex/mihomo/listener/sing"
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/ntp"
@@ -27,6 +28,7 @@ type Listener struct {
 	udpListeners []net.PacketConn
 	tlsConfig    *tls.Config
 	services     []*trusttunnel.Service
+	users        *inbounduser.Set[string]
 }
 
 func New(config LC.TrustTunnelServer, lc C.InboundListenConfig, tunnel C.Tunnel, additions ...inbound.Addition) (sl *Listener, err error) {
@@ -71,7 +73,9 @@ func New(config LC.TrustTunnelServer, lc C.InboundListenConfig, tunnel C.Tunnel,
 		tlsConfig.ClientCAs = pool
 	}
 
+	users, _ := inbounduser.New(trusttunnel.UserKey, inbounduser.FromMap(config.Users)) // UserKey never fails
 	sl = &Listener{
+		users:     users,
 		config:    config,
 		tlsConfig: tlsConfig,
 	}
@@ -141,7 +145,7 @@ func New(config LC.TrustTunnelServer, lc C.InboundListenConfig, tunnel C.Tunnel,
 			Fallback:              config.Fallback,
 			QUICBBRProfile:        config.BBRProfile,
 		})
-		service.UpdateUsers(config.Users)
+		service.SetUserSet(sl.users)
 		err = service.Start(tcpListener, udpConn, tlsConfig)
 		if err != nil {
 			_ = sl.Close()
@@ -152,6 +156,18 @@ func New(config LC.TrustTunnelServer, lc C.InboundListenConfig, tunnel C.Tunnel,
 	}
 
 	return sl, nil
+}
+
+// Users returns the current users (Name = username, Secret = password).
+func (l *Listener) Users() []C.InboundUser { return l.users.Users() }
+
+// ReplaceUsers swaps the users without closing the listener; the tunnels of
+// the removed and changed users are closed.
+func (l *Listener) ReplaceUsers(users []C.InboundUser) (inbounduser.Change, error) {
+	if err := inbounduser.NoFlow("trusttunnel", users); err != nil {
+		return inbounduser.Change{}, err
+	}
+	return l.users.Replace(users)
 }
 
 func (l *Listener) Close() error {

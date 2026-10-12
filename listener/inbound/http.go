@@ -28,6 +28,7 @@ func (o HTTPOption) Equal(config C.InboundConfig) bool {
 
 type HTTP struct {
 	*Base
+	authStoreUsers
 	config *HTTPOption
 	l      []*http.Listener
 }
@@ -38,8 +39,9 @@ func NewHTTP(options *HTTPOption) (*HTTP, error) {
 		return nil, err
 	}
 	return &HTTP{
-		Base:   base,
-		config: options,
+		Base:           base,
+		config:         options,
+		authStoreUsers: newAuthStoreUsers(base.Name(), options.Users),
 	}, nil
 }
 
@@ -65,7 +67,7 @@ func (h *HTTP) Listen(tunnel C.Tunnel) error {
 			LC.AuthServer{
 				Enable:         true,
 				Listen:         addr,
-				AuthStore:      h.config.Users.GetAuthStore(),
+				AuthStore:      h.authStore(),
 				Certificate:    h.config.Certificate,
 				PrivateKey:     h.config.PrivateKey,
 				ClientAuthType: h.config.ClientAuthType,
@@ -102,3 +104,14 @@ func (h *HTTP) Close() error {
 }
 
 var _ C.InboundListener = (*HTTP)(nil)
+
+// SameExceptUsers implements constant.InboundUserUpdater: only between
+// configurations that both have users of their own (no users means the
+// global authentication, `users: []` turns it off).
+func (h *HTTP) SameExceptUsers(config C.InboundConfig) bool {
+	other, ok := config.(*HTTPOption)
+	return ok && h.store != nil && len(other.Users) > 0 && equalExceptUsers(h.config, other)
+}
+
+var _ C.InboundUserUpdater = (*HTTP)(nil)
+var _ C.InboundUserLister = (*HTTP)(nil)
