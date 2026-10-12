@@ -10,6 +10,7 @@ import (
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/listener/inbounduser"
 	"github.com/metacubex/mihomo/transport/socks5"
 	"github.com/metacubex/mihomo/transport/tuic/common"
 	"github.com/metacubex/mihomo/transport/tuic/types"
@@ -26,7 +27,7 @@ type ServerOption struct {
 
 	TlsConfig             *tls.Config
 	QuicConfig            *quic.Config
-	Users                 map[[16]byte]string // V5 special
+	Users                 *inbounduser.Set[[16]byte] // V5 special: Name = uuid, Secret = password
 	CongestionController  string
 	AuthenticationTimeout time.Duration
 	MaxUdpRelayPacketSize int
@@ -192,7 +193,7 @@ func NewServer(option *ServerOption, pc net.PacketConn) (*Server, error) {
 		ServerOption: option,
 		listener:     listener,
 	}
-	if len(option.Users) > 0 {
+	if option.Users != nil {
 		maxUdpRelayPacketSize := option.MaxUdpRelayPacketSize
 		if maxUdpRelayPacketSize > MaxFragSizeV5 {
 			maxUdpRelayPacketSize = MaxFragSizeV5

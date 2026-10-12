@@ -8,13 +8,16 @@ import (
 	"testing"
 	"time"
 
+	C "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/listener/inbounduser"
 	"github.com/metacubex/mihomo/transport/anytls/padding"
 )
 
 // serveAnyTLSOnce accepts one TCP connection and serves it with l.HandleConn.
 func serveAnyTLSOnce(t *testing.T) net.Conn {
 	t.Helper()
-	l := &Listener{userMap: map[[32]byte]string{sha256.Sum256([]byte("password")): "test"}}
+	users, _ := inbounduser.New(userKey, []C.InboundUser{{Name: "test", Secret: "password"}})
+	l := &Listener{users: users}
 	padding.UpdatePaddingScheme(padding.DefaultPaddingScheme, &l.padding)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

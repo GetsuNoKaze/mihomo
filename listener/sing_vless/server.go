@@ -13,6 +13,7 @@ import (
 	"github.com/metacubex/mihomo/component/ech"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
+	"github.com/metacubex/mihomo/listener/inbounduser"
 	"github.com/metacubex/mihomo/listener/jls"
 	"github.com/metacubex/mihomo/listener/reality"
 	"github.com/metacubex/mihomo/listener/restls"
@@ -36,7 +37,7 @@ type Listener struct {
 	closed     bool
 	config     LC.VlessServer
 	listeners  []net.Listener
-	service    *Service[string]
+	service    *Service
 	decryption *encryption.ServerInstance
 	realIP     httputils.RealIP
 }
@@ -58,17 +59,9 @@ func New(config LC.VlessServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
 		return nil, err
 	}
 
-	service := NewService[string](h)
-	service.UpdateUsers(
-		common.Map(config.Users, func(it LC.VlessUser) string {
-			return it.Username
-		}),
-		common.Map(config.Users, func(it LC.VlessUser) string {
-			return it.UUID
-		}),
-		common.Map(config.Users, func(it LC.VlessUser) string {
-			return it.Flow
-		}))
+	service := NewService(h, common.Map(config.Users, func(it LC.VlessUser) C.InboundUser {
+		return C.InboundUser{Name: it.Username, Secret: it.UUID, Flow: it.Flow}
+	}))
 
 	realIP, err := httputils.NewRealIP(config.TrustedProxyHeader, config.TrustedProxies, false)
 	if err != nil {
@@ -321,6 +314,14 @@ func New(config LC.VlessServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
 	}
 
 	return sl, nil
+}
+
+// Users returns the current users.
+func (l *Listener) Users() []C.InboundUser { return l.service.Users() }
+
+// ReplaceUsers swaps the users without closing the listener.
+func (l *Listener) ReplaceUsers(users []C.InboundUser) (inbounduser.Change, error) {
+	return l.service.ReplaceUsers(users)
 }
 
 func (l *Listener) Close() error {

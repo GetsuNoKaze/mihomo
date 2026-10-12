@@ -174,15 +174,32 @@ func (v *Vless) Close() error {
 }
 
 // InboundUsers implements constant.InboundUserLister
-func (v *Vless) InboundUsers() []string {
-	users := make([]string, 0, len(v.config.Users))
-	for _, user := range v.config.Users {
-		if user.Username != "" {
-			users = append(users, user.Username)
-		}
+func (v *Vless) InboundUsers() []string { return userNames(v.Users()) }
+
+func (v *Vless) configUsers() []C.InboundUser {
+	users := make([]C.InboundUser, len(v.config.Users))
+	for i, user := range v.config.Users {
+		users[i] = C.InboundUser{Name: user.Username, Secret: user.UUID, Flow: user.Flow}
 	}
 	return users
 }
 
 var _ C.InboundListener = (*Vless)(nil)
 var _ C.InboundUserLister = (*Vless)(nil)
+
+// Users implements constant.InboundUserUpdater
+func (v *Vless) Users() []C.InboundUser {
+	return listenerUsers(v.l, func() []C.InboundUser { return v.configUsers() })
+}
+
+// SetUsers implements constant.InboundUserUpdater
+func (v *Vless) SetUsers(users []C.InboundUser) error {
+	return setListenerUsers(v.Name(), v.l, users)
+}
+
+// SameExceptUsers implements constant.InboundUserUpdater
+func (v *Vless) SameExceptUsers(config C.InboundConfig) bool {
+	return equalExceptUsers(v.config, config)
+}
+
+var _ C.InboundUserUpdater = (*Vless)(nil)

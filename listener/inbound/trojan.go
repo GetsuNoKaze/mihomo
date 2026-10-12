@@ -129,15 +129,32 @@ func (v *Trojan) Close() error {
 }
 
 // InboundUsers implements constant.InboundUserLister
-func (v *Trojan) InboundUsers() []string {
-	users := make([]string, 0, len(v.config.Users))
-	for _, user := range v.config.Users {
-		if user.Username != "" {
-			users = append(users, user.Username)
-		}
+func (v *Trojan) InboundUsers() []string { return userNames(v.Users()) }
+
+func (v *Trojan) configUsers() []C.InboundUser {
+	users := make([]C.InboundUser, len(v.config.Users))
+	for i, user := range v.config.Users {
+		users[i] = C.InboundUser{Name: user.Username, Secret: user.Password}
 	}
 	return users
 }
 
 var _ C.InboundListener = (*Trojan)(nil)
 var _ C.InboundUserLister = (*Trojan)(nil)
+
+// Users implements constant.InboundUserUpdater
+func (v *Trojan) Users() []C.InboundUser {
+	return listenerUsers(v.l, func() []C.InboundUser { return v.configUsers() })
+}
+
+// SetUsers implements constant.InboundUserUpdater
+func (v *Trojan) SetUsers(users []C.InboundUser) error {
+	return setListenerUsers(v.Name(), v.l, users)
+}
+
+// SameExceptUsers implements constant.InboundUserUpdater
+func (v *Trojan) SameExceptUsers(config C.InboundConfig) bool {
+	return equalExceptUsers(v.config, config)
+}
+
+var _ C.InboundUserUpdater = (*Trojan)(nil)

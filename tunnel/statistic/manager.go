@@ -81,6 +81,32 @@ func (m *Manager) Range(f func(c Tracker) bool) {
 	})
 }
 
+// CloseUserConnections closes the connections of the given users of an
+// inbound (metadata.InName and metadata.InUser) and returns how many it
+// closed. An empty user name never matches.
+func (m *Manager) CloseUserConnections(inbound string, users ...string) int {
+	if len(users) == 0 {
+		return 0
+	}
+	set := make(map[string]struct{}, len(users))
+	for _, user := range users {
+		if user != "" {
+			set[user] = struct{}{}
+		}
+	}
+	closed := 0
+	m.Range(func(c Tracker) bool {
+		if md := c.Info().Metadata; md != nil && md.InName == inbound {
+			if _, ok := set[md.InUser]; ok {
+				_ = c.Close()
+				closed++
+			}
+		}
+		return true
+	})
+	return closed
+}
+
 func (m *Manager) PushUploaded(size int64) {
 	m.uploadTemp.Add(size)
 	m.uploadTotal.Add(size)

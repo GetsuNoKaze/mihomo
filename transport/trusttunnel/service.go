@@ -18,6 +18,8 @@ import (
 
 	"github.com/metacubex/mihomo/common/httputils"
 	N "github.com/metacubex/mihomo/common/net"
+	C "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/listener/inbounduser"
 
 	"github.com/metacubex/http"
 	"github.com/metacubex/http/httputil"
@@ -58,7 +60,7 @@ type ServiceOptions struct {
 type Service struct {
 	ctx                   context.Context
 	logger                logger.ContextLogger
-	users                 map[string][sha256.Size]byte
+	users                 *inbounduser.Set[string]
 	handler               Handler
 	icmpHandler           ICMPHandler
 	quicCongestionControl string
@@ -350,12 +352,21 @@ func (s *Service) Start(tcpListener net.Listener, udpConn net.PacketConn, tlsCon
 	return nil
 }
 
+// UpdateUsers sets the users (username -> password) before Start.
 func (s *Service) UpdateUsers(users map[string]string) {
-	hashedUsers := make(map[string][sha256.Size]byte, len(users))
-	for username, password := range users {
-		hashedUsers[username] = sha256.Sum256([]byte(password))
-	}
-	s.users = hashedUsers
+	s.users, _ = inbounduser.New(UserKey, inbounduser.FromMap(users)) // UserKey never fails
+}
+
+// SetUserSet makes the service authenticate against set, which the caller
+// may replace at runtime (and share between services). Call it before Start.
+func (s *Service) SetUserSet(set *inbounduser.Set[string]) {
+	s.users = set
+}
+
+// UserKey keys the users of a set by name: every request carries its
+// username and password.
+func UserKey(user C.InboundUser) (string, error) {
+	return user.Name, nil
 }
 
 func (s *Service) Close() error {
@@ -387,7 +398,7 @@ func (s *Service) Close() error {
 
 func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	authorization := request.Header.Get("Proxy-Authorization")
-	username, loaded := s.verifyRequest(request, authorization)
+	entry, loaded := s.verifyRequest(request, authorization)
 	if !loaded {
 		if s.serveFallback(writer, request) {
 			// A request with credentials that do not match is most likely a misconfigured
@@ -417,6 +428,19 @@ func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		s.badRequest(request.Context(), request, E.New("unexpected HTTP method ", request.Method))
 		return
 	}
+	username := entry.Name()
+	// every tunnel (stream) of the request dies with the user: removing or
+	// re-keying it closes the tunnel; a new request authenticates again
+	var release func()
+	defer func() {
+		if release != nil {
+			release()
+		}
+	}()
+	bind := func(c io.Closer) (bound bool) {
+		release, bound = s.users.Bind(entry, c)
+		return bound
+	}
 	ctx := request.Context()
 	ctx = auth.ContextWithUser(ctx, username)
 	s.logger.DebugContext(ctx, "[", username, "] ", "request from ", request.RemoteAddr)
@@ -439,6 +463,10 @@ func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		}
 		httputils.SetAddrFromRequest(&conn.NetAddr, request)
 		conn.setup(request.Body, nil)
+		if !bind(conn) {
+			_ = conn.Close()
+			return
+		}
 		firstPacket := buf.NewPacket()
 		destination, err := conn.ReadPacket(firstPacket)
 		if err != nil {
@@ -476,6 +504,10 @@ func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 			}
 			httputils.SetAddrFromRequest(&conn.NetAddr, request)
 			conn.setup(request.Body, nil)
+			if !bind(conn) {
+				_ = conn.Close()
+				return
+			}
 			s.icmpHandler.NewICMPConnection(ctx, conn)
 		}
 	case HealthCheckMagicAddress:
@@ -502,6 +534,10 @@ func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		wrapper := &h2ConnWrapper{
 			ExtendedConn: N.NewDeadlineConn(conn),
 		}
+		if !bind(wrapper) {
+			wrapper.CloseWrapper()
+			return
+		}
 		_ = s.handler.NewConnection(ctx, wrapper, M.Metadata{
 			Protocol:    "trusttunnel",
 			Source:      M.ParseSocksaddr(request.RemoteAddr),
@@ -511,20 +547,24 @@ func (s *Service) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 }
 
-func (s *Service) verify(authorization string) (username string, loaded bool) {
+func (s *Service) verify(authorization string) (entry *inbounduser.Entry, loaded bool) {
 	username, password, loaded := parseBasicAuth(authorization)
-	if !loaded {
-		return "", false
+	if !loaded || s.users == nil {
+		return nil, false
 	}
-	recordedHash, known := s.users[username]
+	entry, known := s.users.Lookup(username)
+	var recordedHash [sha256.Size]byte
+	if known {
+		recordedHash = sha256.Sum256([]byte(entry.Secret()))
+	}
 	passwordHash := sha256.Sum256([]byte(password))
 	// Compare fixed-size digests even for unknown users: comparing raw passwords
 	// would return immediately when their lengths differ. This does not make the
 	// entire authentication path (including the map lookup) constant-time.
 	if subtle.ConstantTimeCompare(passwordHash[:], recordedHash[:]) != 1 || !known {
-		return "", false
+		return nil, false
 	}
-	return username, true
+	return entry, true
 }
 
 func (s *Service) badRequest(ctx context.Context, request *http.Request, err error) {

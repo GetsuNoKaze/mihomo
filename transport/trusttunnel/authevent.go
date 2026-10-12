@@ -4,13 +4,14 @@ import (
 	"net"
 
 	"github.com/metacubex/mihomo/component/authevent"
+	"github.com/metacubex/mihomo/listener/inbounduser"
 
 	"github.com/metacubex/http"
 )
 
 // verifyRequest is verify that also reports a rejected request to authevent.
-func (s *Service) verifyRequest(request *http.Request, authorization string) (username string, loaded bool) {
-	username, loaded = s.verify(authorization)
+func (s *Service) verifyRequest(request *http.Request, authorization string) (entry *inbounduser.Entry, loaded bool) {
+	entry, loaded = s.verify(authorization)
 	if !loaded && authevent.Enabled() {
 		reason := authevent.ReasonNoCredentials
 		if authorization != "" {

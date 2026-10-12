@@ -102,3 +102,25 @@ func (v *TrustTunnel) Close() error {
 }
 
 var _ C.InboundListener = (*TrustTunnel)(nil)
+
+// Users implements constant.InboundUserUpdater
+func (v *TrustTunnel) Users() []C.InboundUser {
+	return listenerUsers(v.l, func() []C.InboundUser { return authUsers(v.config.Users) })
+}
+
+// SetUsers implements constant.InboundUserUpdater
+func (v *TrustTunnel) SetUsers(users []C.InboundUser) error {
+	return setListenerUsers(v.Name(), v.l, users)
+}
+
+// SameExceptUsers implements constant.InboundUserUpdater
+func (v *TrustTunnel) SameExceptUsers(config C.InboundConfig) bool {
+	return equalExceptUsers(v.config, config)
+}
+
+var _ C.InboundUserUpdater = (*TrustTunnel)(nil)
+
+// InboundUsers implements constant.InboundUserLister
+func (v *TrustTunnel) InboundUsers() []string { return userNames(v.Users()) }
+
+var _ C.InboundUserLister = (*TrustTunnel)(nil)

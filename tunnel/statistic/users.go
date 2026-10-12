@@ -346,6 +346,19 @@ func (um *UserManager) Retire(keep func(UserKey) bool) {
 	})
 }
 
+// SetRetired marks the counters of the given users of an inbound as retired
+// (removed from the inbound at runtime: dropped once their connections are
+// closed and their bytes drained) or no longer retired (added back).
+func (um *UserManager) SetRetired(inbound string, users []string, retired bool) {
+	for _, user := range users {
+		if c, ok := um.counters.Load(UserKey{Inbound: inbound, User: user}); ok {
+			c.mu.Lock()
+			c.retired = retired
+			c.mu.Unlock()
+		}
+	}
+}
+
 // Sweep removes counters that are retired or idle longer than IdleTTL, have no
 // connections and have nothing left to drain (or are idle longer than twice
 // IdleTTL), and forgets addresses closed longer than IPRelease ago.

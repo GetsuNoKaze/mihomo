@@ -45,6 +45,7 @@ func HandleConn(c net.Conn, tunnel C.Tunnel, store auth.AuthStore, additions ...
 	authenticator := store.Authenticator()
 	trusted := authenticator == nil // disable authenticate if lru is nil
 	lastUser := ""
+	var bound map[string]struct{} // users this connection is bound to
 
 	for {
 		peekMutex.Lock()
@@ -61,6 +62,19 @@ func HandleConn(c net.Conn, tunnel C.Tunnel, store auth.AuthStore, additions ...
 		resp, user := authenticate(request, authenticator) // always call authenticate function to get user
 		if resp == nil {
 			trusted = true
+			// the connection dies with the user when its users can change
+			// at runtime
+			if _, ok := bound[user]; !ok && user != "" {
+				release, ok := auth.BindSession(authenticator, user, c)
+				if !ok {
+					break // close connection
+				}
+				defer release()
+				if bound == nil {
+					bound = make(map[string]struct{})
+				}
+				bound[user] = struct{}{}
+			}
 		}
 		additions[inUserIdx] = inbound.WithInUser(user)
 
