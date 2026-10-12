@@ -387,7 +387,8 @@ func caseName(t *testing.T) string {
 
 // start runs bin with args, logging to <logDir>/<test>-<role>.log, and kills it
 // when the test ends. On failure the log tail is printed.
-func start(t *testing.T, role, bin string, args ...string) {
+// start runs bin and returns the path of its log.
+func start(t *testing.T, role, bin string, args ...string) string {
 	t.Helper()
 	logPath := filepath.Join(logDir, caseName(t)+"-"+role+".log")
 	f, err := os.Create(logPath)
@@ -413,6 +414,20 @@ func start(t *testing.T, role, bin string, args ...string) {
 			t.Logf("--- %s (%s), last lines:\n%s", role, logPath, strings.Join(lines, "\n"))
 		}
 	})
+	return logPath
+}
+
+// waitLog waits until the log at path contains marker.
+func waitLog(t *testing.T, path, marker string) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(path); err == nil && strings.Contains(string(b), marker) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("%s never logged %q", path, marker)
 }
 
 func waitPort(t *testing.T, port int) {
@@ -478,8 +493,14 @@ func startCitrus(t *testing.T, role string, cfg obj, port int) {
 	dir := caseDir(t, role)
 	p := filepath.Join(dir, "config.yaml")
 	writeJSON(t, p, cfg)
-	start(t, role, citrusBin, "-d", dir, "-f", p)
+	logPath := start(t, role, citrusBin, "-d", dir, "-f", p)
 	waitPort(t, port)
+	// Citrus opens its listeners before the tunnel is running: providers load
+	// in between, and connections that arrive then are dropped (EOF). Wait for
+	// the provider step, then give the tunnel a moment to switch to running,
+	// so neither a pass nor an "expected rejection" comes from startup.
+	waitLog(t, logPath, "Start initial compatible provider")
+	time.Sleep(300 * time.Millisecond)
 }
 
 // xrayFreedom is a freedom outbound that may reach 127.0.0.1: since v26 Xray
