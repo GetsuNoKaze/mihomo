@@ -14,6 +14,16 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
 	if !existType {
 		return nil, fmt.Errorf("missing type")
 	}
+	if proxyType != "vmess" {
+		// mKCP, mekya and TLSMirror were VMess-only and went away with it.
+		switch network, _ := mapping["network"].(string); network {
+		case "mkcp", "kcp", "mekya":
+			return nil, fmt.Errorf("%w: network %s", C.ErrRemovedProtocol, network)
+		}
+		if _, ok := mapping["tlsmirror-opts"]; ok {
+			return nil, fmt.Errorf("%w: tlsmirror-opts", C.ErrRemovedProtocol)
+		}
+	}
 
 	opt := applyProxyOptions(options...)
 	basicOption := outbound.BasicOption{
@@ -48,13 +58,6 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
 			break
 		}
 		proxy, err = outbound.NewHttp(*httpOption)
-	case "vmess":
-		vmessOption := &outbound.VmessOption{BasicOption: basicOption}
-		err = decoder.Decode(mapping, vmessOption)
-		if err != nil {
-			break
-		}
-		proxy, err = outbound.NewVmess(*vmessOption)
 	case "vless":
 		vlessOption := &outbound.VlessOption{BasicOption: basicOption}
 		err = decoder.Decode(mapping, vlessOption)
@@ -211,6 +214,8 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
 		proxy, err = outbound.NewEasyTier(*easyTierOption)
 	case "ssr", "hysteria":
 		return nil, fmt.Errorf("%w: proxy type %s", C.ErrRemovedProtocol, proxyType)
+	case "vmess":
+		return nil, C.ErrVMessRemoved
 	default:
 		return nil, fmt.Errorf("unsupport proxy type: %s", proxyType)
 	}

@@ -336,6 +336,12 @@ func patchConfigs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if general.VmessConfig != nil && *general.VmessConfig != "" {
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, newError("vmess-config: "+C.ErrVMessRemoved.Error()))
+		return
+	}
+
 	if general.TCPConnectTimeout != nil {
 		if err := tunnel.SetTCPConnectTimeout(*general.TCPConnectTimeout); err != nil {
 			render.Status(r, http.StatusBadRequest)
@@ -385,7 +391,6 @@ func patchConfigs(w http.ResponseWriter, r *http.Request) {
 	listener.ReCreateMixed(pointerOrDefault(general.MixedPort, ports.MixedPort), tunnel.Tunnel)
 	listener.ReCreateTun(pointerOrDefaultTun(general.Tun, listener.LastTunConf), tunnel.Tunnel)
 	listener.ReCreateShadowSocks(pointerOrDefault(general.ShadowSocksConfig, ports.ShadowSocksConfig), tunnel.Tunnel)
-	listener.ReCreateVmess(pointerOrDefault(general.VmessConfig, ports.VmessConfig), tunnel.Tunnel)
 	listener.ReCreateTuic(pointerOrDefaultTuicServer(general.TuicServer, listener.LastTuicConf), tunnel.Tunnel)
 
 	if general.Mode != nil {

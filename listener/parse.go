@@ -87,12 +87,7 @@ func ParseListener(mapping map[string]any) (C.InboundListener, error) {
 		}
 		listener, err = IN.NewSnell(snellOption)
 	case "vmess":
-		vmessOption := &IN.VmessOption{}
-		err = decoder.Decode(mapping, vmessOption)
-		if err != nil {
-			return nil, err
-		}
-		listener, err = IN.NewVmess(vmessOption)
+		return nil, C.ErrVMessRemoved
 	case "vless":
 		vlessOption := &IN.VlessOption{}
 		err = decoder.Decode(mapping, vlessOption)

@@ -3,7 +3,6 @@ package convert
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -28,7 +27,7 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			continue
 		}
 
-		scheme, body, found := strings.Cut(line, "://")
+		scheme, _, found := strings.Cut(line, "://")
 		if !found {
 			continue
 		}
@@ -206,159 +205,7 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			proxies = append(proxies, vless)
 
 		case "vmess":
-			// V2RayN-styled share link
-			// https://github.com/2dust/v2rayN/wiki/%E5%88%86%E4%BA%AB%E9%93%BE%E6%8E%A5%E6%A0%BC%E5%BC%8F%E8%AF%B4%E6%98%8E(ver-2)
-			dcBuf, err := tryDecodeBase64([]byte(body))
-			if err != nil {
-				// Xray VMessAEAD share link
-				urlVMess, err := url.Parse(line)
-				if err != nil {
-					continue
-				}
-				query := urlVMess.Query()
-				vmess := make(map[string]any, 20)
-				err = handleVShareLink(names, urlVMess, scheme, vmess)
-				if err != nil {
-					log.Warnln("error:%s line:%s", err.Error(), line)
-					continue
-				}
-				vmess["alterId"] = 0
-				vmess["cipher"] = "auto"
-				if encryption := query.Get("encryption"); encryption != "" {
-					vmess["cipher"] = encryption
-				}
-				proxies = append(proxies, vmess)
-				continue
-			}
-
-			jsonDc := json.NewDecoder(bytes.NewReader(dcBuf))
-			values := make(map[string]any, 20)
-
-			if jsonDc.Decode(&values) != nil {
-				continue
-			}
-			tempName, ok := values["ps"].(string)
-			if !ok {
-				continue
-			}
-			name := uniqueName(names, tempName)
-			vmess := make(map[string]any, 20)
-
-			vmess["name"] = name
-			vmess["type"] = scheme
-			vmess["server"] = values["add"]
-			vmess["port"] = values["port"]
-			vmess["uuid"] = values["id"]
-			if alterId, ok := values["aid"]; ok {
-				vmess["alterId"] = alterId
-			} else {
-				vmess["alterId"] = 0
-			}
-			vmess["udp"] = true
-			vmess["xudp"] = true
-			vmess["tls"] = false
-			vmess["skip-cert-verify"] = false
-
-			vmess["cipher"] = "auto"
-			if cipher, ok := values["scy"].(string); ok && cipher != "" {
-				vmess["cipher"] = cipher
-			}
-
-			if sni, ok := values["sni"].(string); ok && sni != "" {
-				vmess["servername"] = sni
-			}
-
-			network, ok := values["net"].(string)
-			if ok {
-				network = strings.ToLower(network)
-				if values["type"] == "http" {
-					network = "http"
-				} else if network == "http" {
-					network = "h2"
-				}
-				vmess["network"] = network
-			}
-
-			tls, ok := values["tls"].(string)
-			if ok {
-				tls = strings.ToLower(tls)
-				if strings.HasSuffix(tls, "tls") {
-					vmess["tls"] = true
-				}
-				if alpn, ok := values["alpn"].(string); ok {
-					vmess["alpn"] = strings.Split(alpn, ",")
-				}
-			}
-
-			switch network {
-			case "http":
-				headers := make(map[string]any)
-				httpOpts := make(map[string]any)
-				if host, ok := values["host"].(string); ok && host != "" {
-					headers["Host"] = []string{host}
-				}
-				httpOpts["path"] = []string{"/"}
-				if path, ok := values["path"].(string); ok && path != "" {
-					httpOpts["path"] = []string{path}
-				}
-				httpOpts["headers"] = headers
-
-				vmess["http-opts"] = httpOpts
-
-			case "h2":
-				h2Opts := make(map[string]any)
-				h2Opts["path"] = "/"
-				if path, ok := values["path"].(string); ok && path != "" {
-					h2Opts["path"] = path
-				}
-				if host, ok := values["host"].(string); ok && host != "" {
-					h2Opts["host"] = []string{host}
-				}
-				vmess["h2-opts"] = h2Opts
-
-			case "ws", "httpupgrade":
-				headers := make(map[string]any)
-				wsOpts := make(map[string]any)
-				wsOpts["path"] = "/"
-				if host, ok := values["host"].(string); ok && host != "" {
-					headers["Host"] = host
-				}
-				if path, ok := values["path"].(string); ok && path != "" {
-					path := path
-					pathURL, err := url.Parse(path)
-					if err == nil {
-						query := pathURL.Query()
-						if earlyData := query.Get("ed"); earlyData != "" {
-							med, err := strconv.Atoi(earlyData)
-							if err == nil {
-								switch network {
-								case "ws":
-									wsOpts["max-early-data"] = med
-									wsOpts["early-data-header-name"] = "Sec-WebSocket-Protocol"
-								case "httpupgrade":
-									wsOpts["v2ray-http-upgrade-fast-open"] = true
-								}
-								query.Del("ed")
-								pathURL.RawQuery = query.Encode()
-								path = pathURL.String()
-							}
-						}
-						if earlyDataHeader := query.Get("eh"); earlyDataHeader != "" {
-							wsOpts["early-data-header-name"] = earlyDataHeader
-						}
-					}
-					wsOpts["path"] = path
-				}
-				wsOpts["headers"] = headers
-				vmess["ws-opts"] = wsOpts
-
-			case "grpc":
-				grpcOpts := make(map[string]any)
-				grpcOpts["grpc-service-name"] = values["path"]
-				vmess["grpc-opts"] = grpcOpts
-			}
-
-			proxies = append(proxies, vmess)
+			continue // VMess is no longer supported
 
 		case "ss":
 			urlSS, err := url.Parse(line)

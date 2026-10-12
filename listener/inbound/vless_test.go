@@ -216,6 +216,31 @@ func TestInboundVless_Encryption(t *testing.T) {
 	}
 }
 
+func TestInboundVless_Ws(t *testing.T) {
+	for name, wsOpts := range map[string]outbound.WSOptions{
+		"plain": {Path: "/ws"},
+		// early data in the path (Xray style) and in a header (V2Ray style)
+		"ed1": {Path: "/ws?ed=2048"},
+		"ed2": {Path: "/ws", MaxEarlyData: 2048, EarlyDataHeaderName: "Sec-WebSocket-Protocol"},
+		// V2Ray HTTPUpgrade
+		"upgrade1": {Path: "/ws", V2rayHttpUpgrade: true},
+		"upgrade2": {Path: "/ws", V2rayHttpUpgrade: true, V2rayHttpUpgradeFastOpen: true},
+	} {
+		wsOpts := wsOpts // go 1.20 module: loop variables are shared, subtests are parallel
+		t.Run(name, func(t *testing.T) {
+			inboundOptions := inbound.VlessOption{
+				WsPath:        "/ws",
+				AllowInsecure: true, // plain WebSocket, no TLS
+			}
+			outboundOptions := outbound.VlessOption{
+				Network: "ws",
+				WSOpts:  wsOpts,
+			}
+			testInboundVless(t, inboundOptions, outboundOptions)
+		})
+	}
+}
+
 func TestInboundVless_Wss1(t *testing.T) {
 	inboundOptions := inbound.VlessOption{
 		Certificate: tlsCertificate,

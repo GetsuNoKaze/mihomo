@@ -43,10 +43,10 @@ Citrus through a `replace` directive and depends on it.
 
 ## Protocols
 
-Citrus is dropping legacy protocols (VMess first). New protocol or transport
-work should target VLESS, Trojan, Hysteria2, TUIC v5, AnyTLS, TrustTunnel and
-the other protocols Mikan ships, not the ones being removed. Ask in an issue
-before starting larger work.
+Citrus has dropped legacy protocols (VMess, ShadowsocksR, Hysteria v1, TUIC v4,
+Shadowsocks stream ciphers, v2ray-plugin). New protocol or transport work should
+target VLESS, Trojan, Hysteria2, TUIC v5, AnyTLS, TrustTunnel and the other
+protocols Mikan ships. Ask in an issue before starting larger work.
 
 ## Security issues
 
