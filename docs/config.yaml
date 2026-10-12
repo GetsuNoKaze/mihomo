@@ -96,6 +96,13 @@ external-controller-routing-mark: 0
 
 # tcp-concurrent: true # TCP 并发连接所有 IP, 将使用最快握手的 TCP
 
+# 按入站用户统计流量（默认开启）。仅统计带认证用户的连接（metadata.InUser 非空），
+# 计数为出站侧的有效载荷字节，不含入站协议开销。查询：GET /traffic/users
+# Per-user traffic accounting (on by default). Only connections of an authenticated
+# inbound user are counted; the counts are payload bytes on the outbound side,
+# without the inbound protocol overhead. Query: GET /traffic/users
+# user-stats: true
+
 # TCP 出站连接建立总期限（毫秒），包含代理握手及重试，默认 5000，取值范围 100-600000。
 # 仅影响新连接，不影响已建立连接的读写、UDP 或健康检查。
 # 代理适配器内部更短的独立超时仍可能先到期。

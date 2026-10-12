@@ -78,9 +78,18 @@ func closeConnection(w http.ResponseWriter, r *http.Request) {
 	render.NoContent(w, r)
 }
 
+// closeAllConnections closes all connections, or with the `inbound` and/or
+// `user` query parameters only the connections of that inbound and user.
 func closeAllConnections(w http.ResponseWriter, r *http.Request) {
+	match := userFilter(r)
 	statistic.DefaultManager.Range(func(c statistic.Tracker) bool {
-		_ = c.Close()
+		var inbound, user string
+		if m := c.Info().Metadata; m != nil {
+			inbound, user = m.InName, m.InUser
+		}
+		if match(inbound, user) {
+			_ = c.Close()
+		}
 		return true
 	})
 	render.NoContent(w, r)

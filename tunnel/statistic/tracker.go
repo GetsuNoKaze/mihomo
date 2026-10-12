@@ -3,6 +3,7 @@ package statistic
 import (
 	"io"
 	"net"
+	stdatomic "sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
@@ -37,6 +38,9 @@ type tcpTracker struct {
 	C.Conn `json:"-"`
 	*TrackerInfo
 	manager *Manager
+	user    *UserCounter
+	binding userBinding
+	closed  stdatomic.Bool
 
 	pushToManager bool `json:"-"`
 }
@@ -55,6 +59,9 @@ func (tt *tcpTracker) Read(b []byte) (int, error) {
 	if tt.pushToManager {
 		tt.manager.PushDownloaded(download)
 	}
+	if u := tt.user; u != nil {
+		u.AddDown(download)
+	}
 	tt.DownloadTotal.Add(download)
 	return n, err
 }
@@ -65,6 +72,9 @@ func (tt *tcpTracker) ReadBuffer(buffer *buf.Buffer) (err error) {
 	if tt.pushToManager {
 		tt.manager.PushDownloaded(download)
 	}
+	if u := tt.user; u != nil {
+		u.AddDown(download)
+	}
 	tt.DownloadTotal.Add(download)
 	return
 }
@@ -73,6 +83,9 @@ func (tt *tcpTracker) UnwrapReader() (io.Reader, []N.CountFunc) {
 	return tt.Conn, []N.CountFunc{func(download int64) {
 		if tt.pushToManager {
 			tt.manager.PushDownloaded(download)
+		}
+		if u := tt.user; u != nil {
+			u.AddDown(download)
 		}
 		tt.DownloadTotal.Add(download)
 	}}
@@ -84,6 +97,9 @@ func (tt *tcpTracker) Write(b []byte) (int, error) {
 	if tt.pushToManager {
 		tt.manager.PushUploaded(upload)
 	}
+	if u := tt.user; u != nil {
+		u.AddUp(upload)
+	}
 	tt.UploadTotal.Add(upload)
 	return n, err
 }
@@ -94,6 +110,9 @@ func (tt *tcpTracker) WriteBuffer(buffer *buf.Buffer) (err error) {
 	if tt.pushToManager {
 		tt.manager.PushUploaded(upload)
 	}
+	if u := tt.user; u != nil {
+		u.AddUp(upload)
+	}
 	tt.UploadTotal.Add(upload)
 	return
 }
@@ -103,12 +122,18 @@ func (tt *tcpTracker) UnwrapWriter() (io.Writer, []N.CountFunc) {
 		if tt.pushToManager {
 			tt.manager.PushUploaded(upload)
 		}
+		if u := tt.user; u != nil {
+			u.AddUp(upload)
+		}
 		tt.UploadTotal.Add(upload)
 	}}
 }
 
 func (tt *tcpTracker) Close() error {
-	tt.manager.Leave(tt)
+	if tt.closed.CompareAndSwap(false, true) {
+		tt.manager.Leave(tt)
+		tt.binding.release()
+	}
 	return tt.Conn.Close()
 }
 
@@ -133,7 +158,9 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 			DownloadTotal: atomic.NewInt64(downloadTotal),
 		},
 		pushToManager: pushToManager,
+		binding:       bindUser(manager, metadata, pushToManager),
 	}
+	t.user = t.binding.counter
 
 	if pushToManager {
 		if uploadTotal > 0 {
@@ -142,6 +169,10 @@ func NewTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 		if downloadTotal > 0 {
 			manager.PushDownloaded(downloadTotal)
 		}
+	}
+	if u := t.user; u != nil {
+		u.AddUp(uploadTotal)
+		u.AddDown(downloadTotal)
 	}
 
 	if rule != nil {
@@ -157,6 +188,9 @@ type udpTracker struct {
 	C.PacketConn `json:"-"`
 	*TrackerInfo
 	manager *Manager
+	user    *UserCounter
+	binding userBinding
+	closed  stdatomic.Bool
 
 	pushToManager bool `json:"-"`
 }
@@ -175,6 +209,9 @@ func (ut *udpTracker) ReadFrom(b []byte) (int, net.Addr, error) {
 	if ut.pushToManager {
 		ut.manager.PushDownloaded(download)
 	}
+	if u := ut.user; u != nil {
+		u.AddDown(download)
+	}
 	ut.DownloadTotal.Add(download)
 	return n, addr, err
 }
@@ -184,6 +221,9 @@ func (ut *udpTracker) WaitReadFrom() (data []byte, put func(), addr net.Addr, er
 	download := int64(len(data))
 	if ut.pushToManager {
 		ut.manager.PushDownloaded(download)
+	}
+	if u := ut.user; u != nil {
+		u.AddDown(download)
 	}
 	ut.DownloadTotal.Add(download)
 	return
@@ -195,12 +235,18 @@ func (ut *udpTracker) WriteTo(b []byte, addr net.Addr) (int, error) {
 	if ut.pushToManager {
 		ut.manager.PushUploaded(upload)
 	}
+	if u := ut.user; u != nil {
+		u.AddUp(upload)
+	}
 	ut.UploadTotal.Add(upload)
 	return n, err
 }
 
 func (ut *udpTracker) Close() error {
-	ut.manager.Leave(ut)
+	if ut.closed.CompareAndSwap(false, true) {
+		ut.manager.Leave(ut)
+		ut.binding.release()
+	}
 	return ut.PacketConn.Close()
 }
 
@@ -225,7 +271,9 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 			DownloadTotal: atomic.NewInt64(downloadTotal),
 		},
 		pushToManager: pushToManager,
+		binding:       bindUser(manager, metadata, pushToManager),
 	}
+	ut.user = ut.binding.counter
 
 	if pushToManager {
 		if uploadTotal > 0 {
@@ -234,6 +282,10 @@ func NewUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 		if downloadTotal > 0 {
 			manager.PushDownloaded(downloadTotal)
 		}
+	}
+	if u := ut.user; u != nil {
+		u.AddUp(uploadTotal)
+		u.AddDown(downloadTotal)
 	}
 
 	if rule != nil {

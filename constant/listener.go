@@ -26,6 +26,14 @@ type InboundListener interface {
 	Config() InboundConfig
 }
 
+// InboundUserLister is implemented by the inbound listeners that know the
+// complete list of their users, each as it appears in Metadata.InUser. The
+// per-user traffic counters of the users that are no longer listed are
+// dropped after a configuration reload.
+type InboundUserLister interface {
+	InboundUsers() []string
+}
+
 type InboundConfig interface {
 	Name() string
 	Equal(config InboundConfig) bool

@@ -128,4 +128,16 @@ func (v *Trojan) Close() error {
 	return v.l.Close()
 }
 
+// InboundUsers implements constant.InboundUserLister
+func (v *Trojan) InboundUsers() []string {
+	users := make([]string, 0, len(v.config.Users))
+	for _, user := range v.config.Users {
+		if user.Username != "" {
+			users = append(users, user.Username)
+		}
+	}
+	return users
+}
+
 var _ C.InboundListener = (*Trojan)(nil)
+var _ C.InboundUserLister = (*Trojan)(nil)
