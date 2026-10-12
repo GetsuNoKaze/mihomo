@@ -1890,6 +1890,15 @@ sub-rules:
     - DOMAIN,dns.alidns.com,REJECT
 
 # 流量入站
+# listeners 的用户可在运行时通过 API 增删改，无需重建监听器（vless、trojan、anytls、trusttunnel、
+# tuic、多用户 shadowsocks、socks/http/mixed）：GET/PUT/POST /inbounds/{name}/users，
+# PATCH/DELETE /inbounds/{name}/users/{user}。改动只在内存中，重新加载配置会恢复配置中的用户；
+# 仅 users 不同的配置重载会原地更新用户而不重建监听器。
+# The users of the listeners below can be changed at runtime through the API without
+# recreating the listener (vless, trojan, anytls, trusttunnel, tuic, multi-user shadowsocks,
+# socks/http/mixed): GET/PUT/POST /inbounds/{name}/users, PATCH/DELETE
+# /inbounds/{name}/users/{user}. The changes live in memory; a config reload sets the users
+# of the config again, and a reload that changes only the users updates them in place.
 listeners:
   - name: socks5-in-1
     type: socks
