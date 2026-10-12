@@ -1,0 +1,346 @@
+package statistic
+
+import (
+	"net/netip"
+	"sort"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/metacubex/mihomo/common/xsync"
+	C "github.com/metacubex/mihomo/constant"
+)
+
+// Per-user traffic accounting.
+//
+// Every connection that the tunnel carries for an authenticated inbound user
+// (metadata.InUser is not empty) adds its payload bytes to the counter of the
+// pair (inbound name, user). The bytes are counted on the outbound side of the
+// tunnel, exactly like the global totals and the per-connection counters: they
+// are the bytes the user exchanged with the destinations, without the overhead
+// of the inbound protocol (TLS, VLESS/Trojan headers, mux frames and so on).
+//
+// The counter is resolved once per connection (TCP) or per NAT session (UDP);
+// the hot path is one atomic add per read or write. Connections without a user
+// (TUN, redir, anonymous inbounds) cost a nil check.
+
+const (
+	defaultUserIdleTTL   = 10 * time.Minute
+	defaultUserIPRelease = time.Minute
+	userSweepInterval    = time.Minute
+)
+
+var userStatsEnabled atomic.Bool
+
+func init() {
+	userStatsEnabled.Store(true)
+}
+
+// SetUserStatsEnabled turns the per-user accounting on or off (the
+// `user-stats` option). Connections opened while it is off are not attributed;
+// the counters already collected are kept.
+func SetUserStatsEnabled(enabled bool) { userStatsEnabled.Store(enabled) }
+
+// UserStatsEnabled reports whether new connections are attributed to users.
+func UserStatsEnabled() bool { return userStatsEnabled.Load() }
+
+// UserKey identifies a user of an inbound: metadata.InName and metadata.InUser.
+type UserKey struct {
+	Inbound string
+	User    string
+}
+
+// UserIP is a source address of a user with the number of its open
+// connections. An address stays listed for a short release window after its
+// last connection is closed.
+type UserIP struct {
+	IP       netip.Addr `json:"ip"`
+	Conns    int64      `json:"conns"`
+	LastSeen time.Time  `json:"lastSeen"`
+}
+
+// UserStat is a snapshot of a user's counters. Up and Down are cumulative
+// since the counter was created in Snapshot and Get, and the bytes since the
+// previous drain in Drain.
+type UserStat struct {
+	Inbound    string    `json:"inbound"`
+	User       string    `json:"user"`
+	Up         int64     `json:"up"`
+	Down       int64     `json:"down"`
+	Conns      int64     `json:"conns"`
+	IPs        []UserIP  `json:"ips"`
+	LastActive time.Time `json:"lastActive"`
+}
+
+type userIPEntry struct {
+	conns    int64
+	lastSeen time.Time
+}
+
+const cacheLinePad = 64 - 8
+
+// UserCounter holds the counters of one user. up and down are written on every
+// read and write of the user's connections, from different goroutines, so each
+// sits on its own cache line.
+type UserCounter struct {
+	up   atomic.Int64
+	_    [cacheLinePad]byte
+	down atomic.Int64
+	_    [cacheLinePad]byte
+
+	conns atomic.Int64
+
+	mu          sync.Mutex
+	ips         map[netip.Addr]*userIPEntry
+	drainedUp   int64 // up and down at the last drain
+	drainedDown int64
+	observed    int64 // up+down when the activity was last observed
+	lastActive  time.Time
+	retired     bool
+	deleted     bool
+}
+
+// AddUp adds n uploaded bytes.
+func (c *UserCounter) AddUp(n int64) { c.up.Add(n) }
+
+// AddDown adds n downloaded bytes.
+func (c *UserCounter) AddDown(n int64) { c.down.Add(n) }
+
+// observe moves lastActive forward when bytes moved since the last look.
+// c.mu must be held.
+func (c *UserCounter) observe(now time.Time) {
+	if total := c.up.Load() + c.down.Load(); total != c.observed {
+		c.observed = total
+		c.lastActive = now
+	}
+}
+
+// acquire registers a new connection from ip; it fails when the sweep has
+// already deleted the counter.
+func (c *UserCounter) acquire(ip netip.Addr, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.deleted {
+		return false
+	}
+	c.conns.Add(1)
+	c.lastActive = now
+	if ip.IsValid() {
+		e := c.ips[ip]
+		if e == nil {
+			if c.ips == nil {
+				c.ips = make(map[netip.Addr]*userIPEntry)
+			}
+			e = &userIPEntry{}
+			c.ips[ip] = e
+		}
+		e.conns++
+		e.lastSeen = now
+	}
+	return true
+}
+
+func (c *UserCounter) release(ip netip.Addr, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.conns.Add(-1)
+	c.observe(now)
+	c.lastActive = now
+	if e := c.ips[ip]; e != nil && e.conns > 0 {
+		e.conns--
+		e.lastSeen = now
+	}
+}
+
+// stat builds a snapshot; c.mu must be held.
+func (c *UserCounter) stat(key UserKey, now time.Time, drain bool) UserStat {
+	c.observe(now)
+	up, down := c.up.Load(), c.down.Load()
+	s := UserStat{
+		Inbound:    key.Inbound,
+		User:       key.User,
+		Up:         up,
+		Down:       down,
+		Conns:      c.conns.Load(),
+		LastActive: c.lastActive,
+		IPs:        make([]UserIP, 0, len(c.ips)),
+	}
+	if drain {
+		s.Up, s.Down = up-c.drainedUp, down-c.drainedDown
+		c.drainedUp, c.drainedDown = up, down
+	}
+	for ip, e := range c.ips {
+		s.IPs = append(s.IPs, UserIP{IP: ip, Conns: e.conns, LastSeen: e.lastSeen})
+	}
+	sort.Slice(s.IPs, func(i, j int) bool { return s.IPs[i].IP.Less(s.IPs[j].IP) })
+	return s
+}
+
+// UserManager keeps the counters of all users.
+type UserManager struct {
+	counters xsync.Map[UserKey, *UserCounter]
+
+	// IdleTTL is how long a counter without connections and traffic is kept;
+	// IPRelease is how long an address is listed after its last connection.
+	IdleTTL   time.Duration
+	IPRelease time.Duration
+
+	now func() time.Time
+}
+
+// NewUserManager returns an empty manager with the default timeouts.
+func NewUserManager() *UserManager {
+	return &UserManager{IdleTTL: defaultUserIdleTTL, IPRelease: defaultUserIPRelease, now: time.Now}
+}
+
+// Acquire returns the counter of key with a connection from ip registered on
+// it. The caller must call Release with the same ip exactly once.
+func (um *UserManager) Acquire(key UserKey, ip netip.Addr) *UserCounter {
+	now := um.now()
+	for {
+		c, _ := um.counters.LoadOrCompute(key, func() (*UserCounter, bool) {
+			return &UserCounter{lastActive: now}, false
+		})
+		if c.acquire(ip, now) {
+			return c
+		}
+		// the sweep is deleting this counter right now; the next load
+		// finds the map without it
+	}
+}
+
+// Release unregisters a connection acquired with Acquire.
+func (um *UserManager) Release(c *UserCounter, ip netip.Addr) {
+	c.release(ip, um.now())
+}
+
+func (um *UserManager) collect(filter func(UserKey) bool, drain bool) []UserStat {
+	now := um.now()
+	stats := make([]UserStat, 0)
+	um.counters.Range(func(key UserKey, c *UserCounter) bool {
+		if filter != nil && !filter(key) {
+			return true
+		}
+		c.mu.Lock()
+		if !c.deleted {
+			stats = append(stats, c.stat(key, now, drain))
+		}
+		c.mu.Unlock()
+		return true
+	})
+	sort.Slice(stats, func(i, j int) bool {
+		if stats[i].Inbound != stats[j].Inbound {
+			return stats[i].Inbound < stats[j].Inbound
+		}
+		return stats[i].User < stats[j].User
+	})
+	return stats
+}
+
+// Snapshot returns the cumulative counters of all users.
+func (um *UserManager) Snapshot() []UserStat { return um.collect(nil, false) }
+
+// SnapshotFunc returns the cumulative counters of the users that filter accepts.
+func (um *UserManager) SnapshotFunc(filter func(UserKey) bool) []UserStat {
+	return um.collect(filter, false)
+}
+
+// Drain returns the bytes of every user since the previous drain and starts a
+// new period ("query with reset"): no byte is reported twice or lost. Snapshot
+// stays cumulative.
+func (um *UserManager) Drain() []UserStat { return um.collect(nil, true) }
+
+// DrainFunc drains only the users that filter accepts.
+func (um *UserManager) DrainFunc(filter func(UserKey) bool) []UserStat {
+	return um.collect(filter, true)
+}
+
+// Get returns the cumulative counters of one user.
+func (um *UserManager) Get(key UserKey) (UserStat, bool) {
+	c, ok := um.counters.Load(key)
+	if !ok {
+		return UserStat{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.deleted {
+		return UserStat{}, false
+	}
+	return c.stat(key, um.now(), false), true
+}
+
+// Len returns the number of counters.
+func (um *UserManager) Len() int { return um.counters.Size() }
+
+// Retire marks the users for which keep returns false as gone from the
+// configuration (after a reload), so the sweep removes them as soon as they
+// have no connections and their bytes were drained. A key that keep accepts
+// again is no longer retired.
+func (um *UserManager) Retire(keep func(UserKey) bool) {
+	um.counters.Range(func(key UserKey, c *UserCounter) bool {
+		retired := !keep(key)
+		c.mu.Lock()
+		c.retired = retired
+		c.mu.Unlock()
+		return true
+	})
+}
+
+// Sweep removes counters that are retired or idle longer than IdleTTL, have no
+// connections and have nothing left to drain (or are idle longer than twice
+// IdleTTL), and forgets addresses closed longer than IPRelease ago.
+func (um *UserManager) Sweep() {
+	now := um.now()
+	um.counters.Range(func(key UserKey, c *UserCounter) bool {
+		c.mu.Lock()
+		c.observe(now)
+		for ip, e := range c.ips {
+			if e.conns <= 0 && now.Sub(e.lastSeen) > um.IPRelease {
+				delete(c.ips, ip)
+			}
+		}
+		idle := now.Sub(c.lastActive)
+		drained := c.up.Load() == c.drainedUp && c.down.Load() == c.drainedDown
+		if c.conns.Load() == 0 && (c.retired || idle > um.IdleTTL) && (drained || idle > 2*um.IdleTTL) {
+			c.deleted = true
+		}
+		deleted := c.deleted
+		c.mu.Unlock()
+		if deleted {
+			um.counters.Compute(key, func(old *UserCounter, loaded bool) (*UserCounter, xsync.ComputeOp) {
+				if loaded && old == c {
+					return nil, xsync.DeleteOp
+				}
+				return old, xsync.CancelOp
+			})
+		}
+		return true
+	})
+}
+
+// userBinding is what a tracker keeps: the counter and the address it was
+// acquired with.
+type userBinding struct {
+	manager *UserManager
+	counter *UserCounter
+	ip      netip.Addr
+}
+
+func bindUser(manager *Manager, metadata *C.Metadata, pushToManager bool) userBinding {
+	if !pushToManager || metadata == nil || metadata.InUser == "" || !userStatsEnabled.Load() {
+		return userBinding{}
+	}
+	um := manager.Users()
+	ip := metadata.SrcIP.Unmap()
+	return userBinding{
+		manager: um,
+		counter: um.Acquire(UserKey{Inbound: metadata.InName, User: metadata.InUser}, ip),
+		ip:      ip,
+	}
+}
+
+func (b userBinding) release() {
+	if b.counter != nil {
+		b.manager.Release(b.counter, b.ip)
+	}
+}

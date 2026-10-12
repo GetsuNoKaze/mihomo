@@ -2,6 +2,7 @@ package statistic
 
 import (
 	"os"
+	stdatomic "sync/atomic"
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
@@ -35,6 +36,16 @@ type Manager struct {
 	downloadTotal atomic.Int64
 	pid           int32
 	memory        uint64
+	users         stdatomic.Pointer[UserManager]
+}
+
+// Users returns the per-user counters, creating them on first use.
+func (m *Manager) Users() *UserManager {
+	if um := m.users.Load(); um != nil {
+		return um
+	}
+	m.users.CompareAndSwap(nil, NewUserManager())
+	return m.users.Load()
 }
 
 func (m *Manager) Join(c Tracker) {
@@ -114,10 +125,17 @@ func (m *Manager) ResetStatistic() {
 
 func (m *Manager) handle() {
 	ticker := time.NewTicker(time.Second)
+	lastSweep := time.Now()
 
-	for range ticker.C {
+	for now := range ticker.C {
 		m.uploadBlip.Store(m.uploadTemp.Swap(0))
 		m.downloadBlip.Store(m.downloadTemp.Swap(0))
+		if now.Sub(lastSweep) >= userSweepInterval {
+			lastSweep = now
+			if um := m.users.Load(); um != nil {
+				um.Sweep()
+			}
+		}
 	}
 }
 

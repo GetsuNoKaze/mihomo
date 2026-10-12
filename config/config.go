@@ -68,6 +68,7 @@ type General struct {
 	KeepAliveIdle     int                     `json:"keep-alive-idle"`
 	KeepAliveInterval int                     `json:"keep-alive-interval"`
 	DisableKeepAlive  bool                    `json:"disable-keep-alive"`
+	UserStats         bool                    `json:"user-stats"`
 }
 
 // Inbound config
@@ -448,6 +449,7 @@ type RawConfig struct {
 	GeodataLoader                 string                  `yaml:"geodata-loader" json:"geodata-loader"`
 	GeositeMatcher                string                  `yaml:"geosite-matcher" json:"geosite-matcher"`
 	TCPConcurrent                 bool                    `yaml:"tcp-concurrent" json:"tcp-concurrent"`
+	UserStats                     bool                    `yaml:"user-stats" json:"user-stats"`
 	TCPConnectTimeout             int64                   `yaml:"tcp-connect-timeout" json:"tcp-connect-timeout"`
 	FindProcessMode               process.FindProcessMode `yaml:"find-process-mode" json:"find-process-mode"`
 	GlobalClientFingerprint       string                  `yaml:"global-client-fingerprint" json:"global-client-fingerprint"`
@@ -508,6 +510,7 @@ func DefaultRawConfig() *RawConfig {
 		Proxy:             []map[string]any{},
 		ProxyGroup:        []map[string]any{},
 		TCPConcurrent:     false,
+		UserStats:         true,
 		TCPConnectTimeout: 5000,
 		FindProcessMode:   process.FindProcessStrict,
 		GlobalUA:          "clash.meta/" + C.Version,
@@ -827,6 +830,7 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 		KeepAliveIdle:     cfg.KeepAliveIdle,
 		KeepAliveInterval: cfg.KeepAliveInterval,
 		DisableKeepAlive:  cfg.DisableKeepAlive,
+		UserStats:         cfg.UserStats,
 	}, nil
 }
 

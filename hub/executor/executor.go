@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 	_ "unsafe"
@@ -41,6 +42,7 @@ import (
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/ntp/ntp"
 	"github.com/metacubex/mihomo/tunnel"
+	"github.com/metacubex/mihomo/tunnel/statistic"
 )
 
 var mux sync.Mutex
@@ -106,6 +108,7 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	updateDNS(cfg.DNS, cfg.General.IPv6)
 	updateNTP(cfg.NTP) // initialize NTP after DNS because an NTP server may be a hostname.
 	updateListeners(cfg.General, cfg.Listeners, force)
+	retireUsers(cfg.Listeners)
 	updateTun(cfg.General) // tun should not care "force"
 	updateIPTables(cfg)
 	updateTunnels(cfg.Tunnels)
@@ -122,6 +125,42 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	updateUpdater(cfg)
 
 	resolver.ResetConnection()
+}
+
+// retireUsers marks the per-user traffic counters of the listeners and users
+// that the new configuration no longer has, so they are dropped once their
+// connections are closed and their bytes drained. The built-in inbounds
+// (DEFAULT-*) and the listeners that cannot list their users rely on the idle
+// timeout instead.
+func retireUsers(listeners map[string]C.InboundListener) {
+	retireUsersIn(statistic.DefaultManager.Users(), listeners)
+}
+
+func retireUsersIn(um *statistic.UserManager, listeners map[string]C.InboundListener) {
+	known := make(map[string]map[string]struct{})
+	um.Retire(func(key statistic.UserKey) bool {
+		if strings.HasPrefix(key.Inbound, "DEFAULT-") {
+			return true
+		}
+		l, ok := listeners[key.Inbound]
+		if !ok {
+			return false
+		}
+		lister, ok := l.(C.InboundUserLister)
+		if !ok {
+			return true
+		}
+		users, ok := known[key.Inbound]
+		if !ok {
+			users = make(map[string]struct{})
+			for _, user := range lister.InboundUsers() {
+				users[user] = struct{}{}
+			}
+			known[key.Inbound] = users
+		}
+		_, ok = users[key.User]
+		return ok
+	})
 }
 
 func initInnerTcp() {
@@ -180,6 +219,7 @@ func GetGeneral() *config.General {
 		KeepAliveInterval: int(keepalive.KeepAliveInterval() / time.Second),
 		KeepAliveIdle:     int(keepalive.KeepAliveIdle() / time.Second),
 		DisableKeepAlive:  keepalive.DisableKeepAlive(),
+		UserStats:         statistic.UserStatsEnabled(),
 	}
 
 	return general
@@ -428,6 +468,7 @@ func updateGeneral(general *config.General, logging bool) {
 	keepalive.SetDisableKeepAlive(general.DisableKeepAlive)
 
 	adapter.UnifiedDelay.Store(general.UnifiedDelay)
+	statistic.SetUserStatsEnabled(general.UserStats)
 
 	dialer.DefaultInterface.Store(general.Interface)
 	dialer.DefaultRoutingMark.Store(int32(general.RoutingMark))
