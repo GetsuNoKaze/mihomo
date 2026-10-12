@@ -220,6 +220,17 @@ func (l *limitState) charge(n int64) {
 	}
 }
 
+// ErrQuotaExceeded is returned by the reads and writes of a user's connections
+// once the user's quota is used up, so that a fast transfer stops at once
+// instead of running on until the connections are closed.
+var ErrQuotaExceeded = errors.New("user quota exceeded")
+
+// overQuota reports whether the user's quota is used up.
+func (l *limitState) overQuota() bool { return l.tripped.Load() }
+
+// hasQuota reports whether the user has a quota.
+func (l *limitState) hasQuota() bool { return l.quota.Load() > 0 }
+
 func (l *limitState) hasSpeed(up bool) bool {
 	if up {
 		return l.up.Load() != nil

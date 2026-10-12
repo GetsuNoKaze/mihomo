@@ -188,3 +188,26 @@ func TestTrackerQuotaClosesConnections(t *testing.T) {
 	require.NoError(t, err)
 	adm.Release()
 }
+
+// TestTrackerQuotaStopsTransferAtOnce checks the quota stops a fast transfer
+// in the read path itself, not only through the asynchronous close: a 5 MB
+// download over a 300 KB quota must stop within about one copy buffer.
+func TestTrackerQuotaStopsTransferAtOnce(t *testing.T) {
+	// unique per run: the counters of DefaultManager outlive a test
+	inbound := fmt.Sprintf("tracker-quota-stop-test-%d", time.Now().UnixNano())
+	setLimit(t, statistic.UserLimit{Inbound: inbound, User: "carol", Quota: 300_000})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		relayThrough(t, inbound, "carol", 0, 5_000_000)
+	}()
+	select {
+	case <-finished:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the transfer did not stop at the quota")
+	}
+	s, ok := statistic.DefaultManager.Users().Get(statistic.UserKey{Inbound: inbound, User: "carol"})
+	require.True(t, ok)
+	assert.LessOrEqual(t, s.Up+s.Down, int64(300_000+256<<10), "overshoot past the quota is at most a buffer or two")
+	assert.Less(t, s.Down, int64(5_000_000))
+}

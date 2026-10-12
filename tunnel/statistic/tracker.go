@@ -83,24 +83,41 @@ func (tt *tcpTracker) countUp(n int64) {
 	tt.UploadTotal.Add(n)
 }
 
-// speedLimited reports whether the user of the tracker has a speed limit in
-// that direction now.
+// speedLimited reports whether the copy in that direction must go through
+// Read/Write rather than splice: when the user has a speed limit, or a quota
+// (a splice step could move a megabyte past it).
 func (tt *tcpTracker) speedLimited(up bool) bool {
 	if u := tt.user; u != nil {
 		if l := u.limit.Load(); l != nil {
-			return l.hasSpeed(up)
+			return l.hasSpeed(up) || l.hasQuota()
+		}
+	}
+	return false
+}
+
+// overQuota reports whether the user of a tracker has used up its quota.
+func overQuota(u *UserCounter) bool {
+	if u != nil {
+		if l := u.limit.Load(); l != nil {
+			return l.overQuota()
 		}
 	}
 	return false
 }
 
 func (tt *tcpTracker) Read(b []byte) (int, error) {
+	if overQuota(tt.user) {
+		return 0, ErrQuotaExceeded
+	}
 	n, err := tt.Conn.Read(b)
 	tt.countDown(int64(n))
 	return n, err
 }
 
 func (tt *tcpTracker) ReadBuffer(buffer *buf.Buffer) (err error) {
+	if overQuota(tt.user) {
+		return ErrQuotaExceeded
+	}
 	err = tt.Conn.ReadBuffer(buffer)
 	tt.countDown(int64(buffer.Len()))
 	return
@@ -120,12 +137,19 @@ func (tt *tcpTracker) UnwrapReader() (io.Reader, []N.CountFunc) {
 }
 
 func (tt *tcpTracker) Write(b []byte) (int, error) {
+	if overQuota(tt.user) {
+		return 0, ErrQuotaExceeded
+	}
 	n, err := tt.Conn.Write(b)
 	tt.countUp(int64(n))
 	return n, err
 }
 
 func (tt *tcpTracker) WriteBuffer(buffer *buf.Buffer) (err error) {
+	if overQuota(tt.user) {
+		buffer.Release()
+		return ErrQuotaExceeded
+	}
 	upload := int64(buffer.Len())
 	err = tt.Conn.WriteBuffer(buffer)
 	tt.countUp(upload)
@@ -260,18 +284,27 @@ func (ut *udpTracker) countUp(n int64) {
 }
 
 func (ut *udpTracker) ReadFrom(b []byte) (int, net.Addr, error) {
+	if overQuota(ut.user) {
+		return 0, nil, ErrQuotaExceeded
+	}
 	n, addr, err := ut.PacketConn.ReadFrom(b)
 	ut.countDown(int64(n))
 	return n, addr, err
 }
 
 func (ut *udpTracker) WaitReadFrom() (data []byte, put func(), addr net.Addr, err error) {
+	if overQuota(ut.user) {
+		return nil, nil, nil, ErrQuotaExceeded
+	}
 	data, put, addr, err = ut.PacketConn.WaitReadFrom()
 	ut.countDown(int64(len(data)))
 	return
 }
 
 func (ut *udpTracker) WriteTo(b []byte, addr net.Addr) (int, error) {
+	if overQuota(ut.user) {
+		return 0, ErrQuotaExceeded
+	}
 	n, err := ut.PacketConn.WriteTo(b, addr)
 	ut.countUp(int64(n))
 	return n, err
