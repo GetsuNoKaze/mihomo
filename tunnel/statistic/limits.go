@@ -138,13 +138,15 @@ func newTokenBucket(rate int64) *tokenBucket {
 	return &tokenBucket{rate: rate, burst: int64(limitBurst)}
 }
 
-func (b *tokenBucket) take(n int64) time.Duration {
+func (b *tokenBucket) take(n int64) time.Duration { return b.takeAt(n, monoNow) }
+
+func (b *tokenBucket) takeAt(n int64, clock func() int64) time.Duration {
 	if n <= 0 {
 		return 0
 	}
 	cost := int64(float64(n) * float64(time.Second) / float64(b.rate))
 	for {
-		now := monoNow()
+		now := clock()
 		old := b.tat.Load()
 		tat := maxInt64(old, now-b.burst) + cost
 		if b.tat.CompareAndSwap(old, tat) {

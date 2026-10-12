@@ -1,6 +1,7 @@
 package statistic_test
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -83,7 +84,7 @@ func assertRate(t *testing.T, elapsed time.Duration, bytes, rate int64) {
 // one user that share a download limit of 2 MB/s and an upload limit of
 // 1 MB/s: about 3 s each way.
 func TestTrackerSpeedLimit(t *testing.T) {
-	const inbound = "tracker-speed-test"
+	inbound := fmt.Sprintf("tracker-speed-test-%d", time.Now().UnixNano()) // fresh counters per run
 	const rateDown, rateUp = 2_000_000, 1_000_000
 	setLimit(t, statistic.UserLimit{Inbound: inbound, User: "alice", SpeedDown: rateDown})
 	start := time.Now()

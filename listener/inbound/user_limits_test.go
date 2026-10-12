@@ -3,6 +3,7 @@ package inbound_test
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -23,7 +24,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const limitsInbound = "socks-user-limits"
+// limitsInbound is the name of the inbound of the current test, fresh for
+// every test so that the counters start at zero (also with -count).
+var limitsInbound string
 
 type limitsEnv struct {
 	t      *testing.T
@@ -36,6 +39,7 @@ type limitsEnv struct {
 func newLimitsEnv(t *testing.T, users ...string) *limitsEnv {
 	tunnel.UpdateProxies(map[string]C.Proxy{"DIRECT": adapter.NewProxy(outbound.NewDirect())}, nil)
 	tunnel.OnRunning()
+	limitsInbound = fmt.Sprintf("socks-user-limits-%d", time.Now().UnixNano())
 	var auth inbound.AuthUsers
 	for _, u := range users {
 		auth = append(auth, inbound.AuthUser{Username: u, Password: u + "-pass"})

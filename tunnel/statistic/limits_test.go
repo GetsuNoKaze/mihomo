@@ -353,15 +353,23 @@ func TestLimitDeleteFallsBackToDefault(t *testing.T) {
 func TestTokenBucket(t *testing.T) {
 	const rate = 1_000_000
 	b := newTokenBucket(rate)
-	var total time.Duration
+	now := int64(10 * time.Second)
+	clock := func() int64 { return now }
 	// the burst is free, then every 100 000 bytes cost 100 ms
-	assert.Equal(t, time.Duration(0), b.take(50_000))
+	assert.Equal(t, time.Duration(0), b.takeAt(50_000, clock))
+	var debt time.Duration
 	for i := 0; i < 10; i++ {
-		d := b.take(100_000)
-		total = d
+		debt = b.takeAt(100_000, clock)
 	}
-	// 1 050 000 bytes at 1 MB/s with 100 ms of burst: about 950 ms of debt
-	assert.InDelta(t, float64(950*time.Millisecond), float64(total), float64(20*time.Millisecond))
+	// 1 050 000 bytes at 1 MB/s with 100 ms of burst: 950 ms of debt
+	assert.Equal(t, 950*time.Millisecond, debt)
+	// after waiting it off, the next take costs only itself
+	now += int64(debt)
+	assert.Equal(t, 100*time.Millisecond, b.takeAt(100_000, clock))
+	// idle for long: the burst is back, no more
+	now += int64(time.Hour)
+	assert.Equal(t, time.Duration(0), b.takeAt(100_000, clock))
+	assert.Equal(t, 100*time.Millisecond, b.takeAt(100_000, clock))
 	assert.Nil(t, newTokenBucket(0))
 }
 
