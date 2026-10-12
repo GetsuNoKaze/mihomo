@@ -219,6 +219,11 @@ type Metadata struct {
 	SniffHost string `json:"sniffHost"`
 	// Only PROTOCOL rule, the application protocol reported by a protocol sniffer
 	SniffProtocol string `json:"sniffProtocol"`
+	// DstIPChecked is set when DstIP was resolved from Host during rule
+	// matching because an IP-based rule asked for it. The rule decision was
+	// made against that address, so DIRECT must dial it rather than resolve
+	// Host again (which could return a different address).
+	DstIPChecked bool `json:"-"`
 }
 
 func (m *Metadata) RemoteAddress() string {

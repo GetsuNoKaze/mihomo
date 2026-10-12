@@ -14,9 +14,11 @@ description: Где искать полный справочник config.yaml �
 | `mixed-port`, `port`, `socks-port`, `redir-port`, `tproxy-port` | Локальные порты прокси. |
 | `allow-lan`, `bind-address`, `authentication`, `lan-allowed-ips` | Доступ из локальной сети и авторизация. |
 | `mode`, `log-level`, `ipv6`, `find-process-mode` | Общий режим работы. |
+| `tcp-concurrent`, `tcp-connect-timeout` | Исходящие TCP-соединения: параллельный набор всех IP; общий срок установки соединения в миллисекундах (по умолчанию 5000, диапазон 100–600000). |
 | `external-controller`, `external-ui`, `secret` | API контроллера и веб-интерфейс. |
 | `tun` | TUN-устройство и сетевой стек. |
 | `dns`, `hosts` | DNS-серверы, fake IP, политики для DNS-запросов. |
+| `dns.serve-expired`, `dns.serve-expired-ttl`, `dns.serve-expired-client-timeout` | Ответ просроченной записью из кэша, пока она обновляется (RFC 8767). По умолчанию просроченная запись отдаётся сразу и обновляется в фоне, как и раньше; TTL и таймаут клиента дают поведение по RFC 8767. |
 | `sniffer` | Определение домена по трафику (TLS, HTTP, QUIC). |
 | `proxies`, `proxy-groups`, `proxy-providers` | Исходящие прокси, группы выбора и удалённые наборы прокси. |
 | `rules`, `sub-rules`, `rule-providers` | Правила маршрутизации и удалённые наборы правил. |
