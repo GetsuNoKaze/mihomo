@@ -225,6 +225,42 @@ sniffer:
     TLS:
     #  ports: [443, 8443]
 
+    # 识别 BitTorrent 流量，供 PROTOCOL,bittorrent 规则匹配
+    # Detects BitTorrent traffic for the PROTOCOL,bittorrent rule
+    #   TCP: 对等端握手 (BEP 3) / the peer handshake
+    #   UDP: uTP 建连 ST_SYN (BEP 29)、DHT 消息 (BEP 5)、UDP Tracker connect (BEP 15)
+    #        uTP ST_SYN, DHT (KRPC) messages, the UDP tracker connect request
+    # 不产生域名，从不修改目标地址，只把连接标记为 bittorrent；
+    # 不受 parse-pure-ip / force-domain 等条件限制，仅遵循 skip-src-address / skip-dst-address
+    # Reports no domain and never overrides the destination. Runs on every
+    # connection not exempted by skip-src-address / skip-dst-address,
+    # regardless of parse-pure-ip, force-dns-mapping or force-domain.
+    #
+    # UDP: 同一 NAT 会话（同一源地址）中每个新目标的前 8 个包都会被检测；一旦识别，
+    # 整个会话（以及之后 5 分钟内来自同一源端口的新会话）都标记为 bittorrent，
+    # 每个目标按规则重新匹配，结果为 REJECT / REJECT-DROP 的包被丢弃。
+    # 会话的出站在第一个包时已确定，其他目标（如 DIRECT 或代理）无法中途切换。
+    # UDP: the first 8 packets to every new destination of a NAT session are
+    # inspected. Once recognised, the whole session (and new sessions from the
+    # same source port for 5 minutes) is tagged, each destination is matched
+    # again, and packets whose rule resolves to REJECT / REJECT-DROP are
+    # dropped. The outbound of a session is fixed by its first packet, so a
+    # target other than REJECT cannot be applied midway.
+    #
+    # TCP: 最多等待客户端数据 300ms，超时则不标记直接放行；默认端口为 1-65535，
+    # 但排除服务器先发言的常用端口 21,22,23,25,110,119,143,587,3306,5900
+    # TCP: waits at most 300 ms for client data, then lets the connection
+    # through untagged. Default ports: 1-65535 minus the well-known
+    # server-first ports 21,22,23,25,110,119,143,587,3306,5900.
+    #
+    # 注意：启用 MSE/PE 协议加密的 BitTorrent TCP 连接无法识别（握手已被加密），
+    # 若需完整拦截请同时拦截 UDP（DHT/uTP/Tracker）。
+    # Caveat: BitTorrent over TCP with MSE/PE (protocol encryption) is not
+    # detectable, the handshake itself is encrypted. Blocking the UDP side
+    # (DHT, uTP, trackers) is what cuts most clients off.
+    # BitTorrent:
+    #  ports: [1-20, 24, 26-109, 111-118, 120-142, 144-586, 588-3305, 3307-5899, 5901-65535]
+
     # 默认嗅探 80
     HTTP: # 需要嗅探的端口
       ports: [80, 8080-8880]
@@ -1958,6 +1994,14 @@ rules:
   - DOMAIN-WILDCARD,test.*.citrus.com,ss1
   - IP-CIDR,1.1.1.1/32,ss1
   - IP-CIDR6,2409::/64,DIRECT
+  # 匹配嗅探到的应用层协议，需要开启对应的 sniffer（见 sniffer.sniff.BitTorrent）
+  # Matches the application protocol a protocol sniffer reported; needs the
+  # sniffer enabled (see sniffer.sniff.BitTorrent). Also works inside
+  # AND/OR/NOT/SUB-RULE. Supported: bittorrent.
+  # 对 UDP 而言，只有 REJECT / REJECT-DROP 能作用于已建立会话中的后续目标
+  # For UDP only REJECT / REJECT-DROP can act on later destinations of an
+  # established session. MSE/PE-encrypted BitTorrent over TCP is not detected.
+  - PROTOCOL,bittorrent,REJECT
   # 当满足条件是 TCP 或 UDP 流量时，使用名为 sub-rule-name1 的规则集
   - SUB-RULE,(OR,((NETWORK,TCP),(NETWORK,UDP))),sub-rule-name1
   - SUB-RULE,(AND,((NETWORK,UDP))),sub-rule-name2
