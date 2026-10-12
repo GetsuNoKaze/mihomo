@@ -63,7 +63,7 @@ func TestProtocolSniffIgnoresDomainGating(t *testing.T) {
 	assert.Equal(t, C.ProtocolBitTorrent, pureIP.SniffProtocol)
 
 	udp := &C.Metadata{NetWork: C.UDP, Host: "peer.example.com", DstIP: netip.MustParseAddr("198.51.100.7"), DstPort: 6881}
-	sd.UDPSniff(constantPacket(gatingSyn, udp), &fakeSender{})
+	sd.UDPSniff(constantPacket(gatingSyn, udp), &fakeSender{}, nil)
 	assert.Equal(t, C.ProtocolBitTorrent, udp.SniffProtocol)
 	assert.Equal(t, "peer.example.com", udp.Host)
 }
@@ -94,7 +94,7 @@ func TestProtocolSniffHonoursSkipAddress(t *testing.T) {
 		assert.Empty(t, tcp.SniffProtocol, name)
 
 		udp := metadata(C.UDP)
-		sd.UDPSniff(constantPacket(gatingSyn, udp), &fakeSender{})
+		sd.UDPSniff(constantPacket(gatingSyn, udp), &fakeSender{}, nil)
 		assert.Empty(t, udp.SniffProtocol, name)
 	}
 

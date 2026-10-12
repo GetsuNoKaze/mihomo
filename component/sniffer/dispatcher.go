@@ -37,8 +37,11 @@ type Dispatcher struct {
 	skipDstAddress   []C.IpMatcher
 	skipDomain       []C.DomainMatcher
 	skipList         *lru.LruCache[netip.AddrPort, uint8]
-	forceDnsMapping  bool
-	parsePureIp      bool
+	// taggedSources remembers the UDP sockets protocol sniffers recognised,
+	// see rememberSource
+	taggedSources   *lru.LruCache[netip.AddrPort, string]
+	forceDnsMapping bool
+	parsePureIp     bool
 }
 
 // configuredSniffer keeps protocol-specific behavior and policy together so
@@ -65,12 +68,7 @@ func (sd *Dispatcher) skipAddress(metadata *C.Metadata) bool {
 			return true
 		}
 	}
-	for _, matcher := range sd.skipSrcAddress {
-		if matcher.MatchIp(metadata.SrcIP) {
-			return true
-		}
-	}
-	return false
+	return sd.skipSource(metadata)
 }
 
 // shouldOverride reports whether a domain should be sniffed for the connection
@@ -115,16 +113,72 @@ func (sd *Dispatcher) hasProtocolSniffer(network C.NetWork, port uint16) bool {
 // it, so the parse-pure-ip, force-dns-mapping and force-domain conditions that
 // decide whether a domain is worth recovering do not apply to them. Only
 // skip-src-address and skip-dst-address exempt a session.
-func (sd *Dispatcher) UDPSniff(packet C.PacketAdapter, packetSender C.PacketSender) C.PacketSender {
+//
+// When verdict is not nil and a protocol sniffer covers UDP, the returned
+// sender keeps inspecting the first packets to every further destination of
+// the session and drops what verdict rejects, see protocolPacketSender.
+func (sd *Dispatcher) UDPSniff(packet C.PacketAdapter, packetSender C.PacketSender, verdict PacketVerdict) C.PacketSender {
 	metadata := packet.Metadata()
-	if sd.skipAddress(metadata) {
-		return packetSender
+	if !sd.skipAddress(metadata) {
+		if protocol := sd.packetProtocol(packet.Data(), metadata); protocol != "" {
+			log.Debugln("[Sniffer] Sniff UDP [%s]-->[%s] as protocol [%s]",
+				metadata.SourceDetail(), metadata.RemoteAddress(), protocol)
+			metadata.SniffProtocol = protocol
+			sd.rememberSource(metadata, protocol)
+		} else if protocol, ok := sd.taggedSources.Get(sourceOf(metadata)); ok {
+			log.Debugln("[Sniffer] UDP [%s]-->[%s] comes from a socket sniffed as protocol [%s]",
+				metadata.SourceDetail(), metadata.RemoteAddress(), protocol)
+			metadata.SniffProtocol = protocol
+		}
+		if sd.shouldOverride(metadata) {
+			packetSender = sd.udpSniffDomain(packet, packetSender)
+		}
 	}
-	sd.sniffPacketProtocol(packet.Data(), metadata)
-	if sd.shouldOverride(metadata) {
-		return sd.udpSniffDomain(packet, packetSender)
+
+	// skip-src-address exempts the whole session, skip-dst-address is checked
+	// for every packet by the wrapper
+	if verdict != nil && sd.hasUDPProtocolSniffer() && !sd.skipSource(metadata) {
+		packetSender = newProtocolPacketSender(sd, packetSender, verdict, metadata)
 	}
 	return packetSender
+}
+
+const (
+	taggedSourcesSize = 1024
+	// seconds; refreshed whenever a new session from the socket inherits it
+	taggedSourcesAge = 300
+)
+
+// rememberSource records that the UDP socket metadata comes from carries
+// protocol. A NAT session that its rules reject is torn down at once, and the
+// next packet from the same socket opens a fresh session. Without this the
+// fresh session would start untagged, and since only the first packets of a
+// BitTorrent exchange are recognisable, its rule would let the rest of the
+// exchange through. New sessions from a remembered socket inherit the tag.
+func (sd *Dispatcher) rememberSource(metadata *C.Metadata, protocol string) {
+	sd.taggedSources.Set(sourceOf(metadata), protocol)
+}
+
+func sourceOf(metadata *C.Metadata) netip.AddrPort {
+	return netip.AddrPortFrom(metadata.SrcIP.Unmap(), metadata.SrcPort)
+}
+
+func (sd *Dispatcher) skipSource(metadata *C.Metadata) bool {
+	for _, matcher := range sd.skipSrcAddress {
+		if matcher.MatchIp(metadata.SrcIP) {
+			return true
+		}
+	}
+	return false
+}
+
+func (sd *Dispatcher) hasUDPProtocolSniffer() bool {
+	for _, current := range sd.protocolSniffers {
+		if snifferSupportsNetwork(current, C.UDP) {
+			return true
+		}
+	}
+	return false
 }
 
 func (sd *Dispatcher) udpSniffDomain(packet C.PacketAdapter, packetSender C.PacketSender) C.PacketSender {
@@ -422,24 +476,18 @@ func (sd *Dispatcher) sniffStreamProtocol(conn *N.BufferedConn, metadata *C.Meta
 	}
 }
 
-// sniffPacketProtocol tags the metadata with the application protocol carried
-// by the first packet of a UDP session.
-func (sd *Dispatcher) sniffPacketProtocol(data []byte, metadata *C.Metadata) {
+// packetProtocol returns the application protocol carried by a UDP packet,
+// or an empty string
+func (sd *Dispatcher) packetProtocol(data []byte, metadata *C.Metadata) string {
 	for _, current := range sd.protocolSniffers {
 		if !snifferSupportsNetwork(current, C.UDP) || !current.SupportPort(metadata.DstPort) {
 			continue
 		}
-
-		protocol, err := current.SniffProtocol(C.UDP, data)
-		if err != nil {
-			continue
+		if protocol, err := current.SniffProtocol(C.UDP, data); err == nil {
+			return protocol
 		}
-
-		log.Debugln("[Sniffer] Sniff UDP [%s]-->[%s] as protocol [%s]",
-			metadata.SourceDetail(), metadata.RemoteAddress(), protocol)
-		metadata.SniffProtocol = protocol
-		return
 	}
+	return ""
 }
 
 func (sd *Dispatcher) cacheSniffFailed(metadata *C.Metadata) {
@@ -465,12 +513,17 @@ type Config struct {
 
 func NewDispatcher(snifferConfig *Config) (*Dispatcher, error) {
 	dispatcher := Dispatcher{
-		enable:          snifferConfig.Enable,
-		forceDomain:     snifferConfig.ForceDomain,
-		skipSrcAddress:  snifferConfig.SkipSrcAddress,
-		skipDstAddress:  snifferConfig.SkipDstAddress,
-		skipDomain:      snifferConfig.SkipDomain,
-		skipList:        lru.New(lru.WithSize[netip.AddrPort, uint8](128), lru.WithAge[netip.AddrPort, uint8](600)),
+		enable:         snifferConfig.Enable,
+		forceDomain:    snifferConfig.ForceDomain,
+		skipSrcAddress: snifferConfig.SkipSrcAddress,
+		skipDstAddress: snifferConfig.SkipDstAddress,
+		skipDomain:     snifferConfig.SkipDomain,
+		skipList:       lru.New(lru.WithSize[netip.AddrPort, uint8](128), lru.WithAge[netip.AddrPort, uint8](600)),
+		taggedSources: lru.New(
+			lru.WithSize[netip.AddrPort, string](taggedSourcesSize),
+			lru.WithAge[netip.AddrPort, string](taggedSourcesAge),
+			lru.WithUpdateAgeOnGet[netip.AddrPort, string](),
+		),
 		forceDnsMapping: snifferConfig.ForceDnsMapping,
 		parsePureIp:     snifferConfig.ParsePureIp,
 		sniffers:        make([]configuredSniffer, 0, len(snifferConfig.Sniffers)),

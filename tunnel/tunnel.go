@@ -441,7 +441,7 @@ func handleUDPConn(packet C.PacketAdapter) {
 	sender, loaded := natTable.GetOrCreate(key, func() C.PacketSender {
 		sender := newPacketSender()
 		if sniffingEnable && snifferDispatcher.Enable() {
-			return snifferDispatcher.UDPSniff(packet, sender)
+			return snifferDispatcher.UDPSniff(packet, sender, protocolVerdict)
 		}
 		return sender
 	})
@@ -497,6 +497,31 @@ func handleUDPConn(packet C.PacketAdapter) {
 		}()
 	}
 	sender.Send(packet) // nonblocking
+}
+
+// protocolVerdict matches the metadata of a packet in an established UDP
+// session again, after a protocol sniffer recognised the session later than
+// its first packet. The session's outbound cannot change any more, so the only
+// decision that can be honoured is a REJECT: the packet is dropped.
+func protocolVerdict(metadata *C.Metadata) bool {
+	_ = preHandleMetadata(metadata) // error was pre-checked
+	proxy, rule, err := resolveMetadata(metadata)
+	if err != nil || proxy == nil {
+		return false
+	}
+	for adapter := C.ProxyAdapter(proxy); adapter != nil; adapter = adapter.Unwrap(metadata, false) {
+		switch adapter.Type() {
+		case C.Reject, C.RejectDrop:
+			ruleName := "no rule"
+			if rule != nil {
+				ruleName = fmt.Sprintf("%s(%s)", rule.RuleType().String(), rule.Payload())
+			}
+			log.Infoln("[UDP] %s --> %s sniffed as %s, match %s using %s, dropped",
+				metadata.SourceDetail(), metadata.RemoteAddress(), metadata.SniffProtocol, ruleName, proxy.Name())
+			return true
+		}
+	}
+	return false
 }
 
 func handleTCPConn(connCtx C.ConnContext) {

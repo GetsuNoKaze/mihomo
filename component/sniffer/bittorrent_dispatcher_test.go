@@ -91,7 +91,7 @@ func TestDispatcherUDPSniffProtocol(t *testing.T) {
 		metadata := &C.Metadata{NetWork: C.UDP, DstPort: 6881}
 		pkt := constantPacket(data, metadata)
 
-		sender := sd.UDPSniff(pkt, &fakeSender{})
+		sender := sd.UDPSniff(pkt, &fakeSender{}, nil)
 		// nothing to wait for, the verdict is taken from the first packet
 		assert.NotNil(t, sender)
 		assert.Equal(t, C.ProtocolBitTorrent, metadata.SniffProtocol, name)
@@ -104,7 +104,7 @@ func TestDispatcherUDPSniffNotBitTorrent(t *testing.T) {
 	metadata := &C.Metadata{NetWork: C.UDP, DstPort: 6881}
 	pkt := constantPacket([]byte("just some udp payload that is long enough"), metadata)
 
-	sd.UDPSniff(pkt, &fakeSender{})
+	sd.UDPSniff(pkt, &fakeSender{}, nil)
 	assert.Empty(t, metadata.SniffProtocol)
 }
 
