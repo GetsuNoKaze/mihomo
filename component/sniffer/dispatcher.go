@@ -57,16 +57,26 @@ func snifferSupportsNetwork(s sniffer.Sniffer, network C.NetWork) bool {
 	return supported == network || supported == C.ALLNet
 }
 
-func (sd *Dispatcher) shouldOverride(metadata *C.Metadata) bool {
+// skipAddress reports whether skip-src-address or skip-dst-address exempt the
+// connection from sniffing, domain and protocol sniffers alike
+func (sd *Dispatcher) skipAddress(metadata *C.Metadata) bool {
 	for _, matcher := range sd.skipDstAddress {
 		if matcher.MatchIp(metadata.DstIP) {
-			return false
+			return true
 		}
 	}
 	for _, matcher := range sd.skipSrcAddress {
 		if matcher.MatchIp(metadata.SrcIP) {
-			return false
+			return true
 		}
+	}
+	return false
+}
+
+// shouldOverride reports whether a domain should be sniffed for the connection
+func (sd *Dispatcher) shouldOverride(metadata *C.Metadata) bool {
+	if sd.skipAddress(metadata) {
+		return false
 	}
 	if metadata.Host == "" && sd.parsePureIp {
 		return true
@@ -86,113 +96,137 @@ func (sd *Dispatcher) forceSniff(metadata *C.Metadata) bool {
 	return false
 }
 
+// hasProtocolSniffer reports whether a protocol sniffer covers the network and
+// destination port
+func (sd *Dispatcher) hasProtocolSniffer(network C.NetWork, port uint16) bool {
+	for _, current := range sd.protocolSniffers {
+		if snifferSupportsNetwork(current, network) && current.SupportPort(port) {
+			return true
+		}
+	}
+	return false
+}
+
 // UDPSniff is called when a UDP NAT is created and passed the first initialization packet.
 // It may return a wrapped packetSender if the sniffer process needs to wait for multiple packets.
 // This function must be non-blocking, and any blocking operations should be done in the wrapped packetSender.
+//
+// Protocol sniffers run whatever the destination looks like: they never touch
+// it, so the parse-pure-ip, force-dns-mapping and force-domain conditions that
+// decide whether a domain is worth recovering do not apply to them. Only
+// skip-src-address and skip-dst-address exempt a session.
 func (sd *Dispatcher) UDPSniff(packet C.PacketAdapter, packetSender C.PacketSender) C.PacketSender {
 	metadata := packet.Metadata()
-	if sd.shouldOverride(metadata) {
-		sd.sniffPacketProtocol(packet.Data(), metadata)
-
-		for _, current := range sd.sniffers {
-			if current.supportsNetwork(C.UDP) {
-				inWhitelist := current.SupportPort(metadata.DstPort)
-				overrideDest := current.config.OverrideDest
-
-				if inWhitelist {
-					replaceDomain := func(metadata *C.Metadata, host string) {
-						if sd.domainCanReplace(host) {
-							replaceDomain(metadata, host, overrideDest)
-						} else {
-							log.Debugln("[Sniffer] Skip sni[%s]", host)
-						}
-					}
-
-					if wrapable, ok := current.Sniffer.(sniffer.MultiPacketSniffer); ok {
-						return wrapable.WrapperSender(packetSender, replaceDomain)
-					}
-
-					host, err := current.SniffData(packet.Data())
-					if err != nil {
-						continue
-					}
-
-					replaceDomain(metadata, host)
-					return packetSender
-				}
-			}
-		}
+	if sd.skipAddress(metadata) {
+		return packetSender
 	}
-
+	sd.sniffPacketProtocol(packet.Data(), metadata)
+	if sd.shouldOverride(metadata) {
+		return sd.udpSniffDomain(packet, packetSender)
+	}
 	return packetSender
 }
 
-// TCPSniff returns true if the connection is sniffed to have a domain
-func (sd *Dispatcher) TCPSniff(conn *N.BufferedConn, metadata *C.Metadata) bool {
-	if sd.shouldOverride(metadata) {
-		inWhitelist := false
-		for _, current := range sd.sniffers {
-			if current.supportsNetwork(C.TCP) {
-				inWhitelist = current.SupportPort(metadata.DstPort)
-				if inWhitelist {
-					break
+func (sd *Dispatcher) udpSniffDomain(packet C.PacketAdapter, packetSender C.PacketSender) C.PacketSender {
+	metadata := packet.Metadata()
+	for _, current := range sd.sniffers {
+		if current.supportsNetwork(C.UDP) {
+			inWhitelist := current.SupportPort(metadata.DstPort)
+			overrideDest := current.config.OverrideDest
+
+			if inWhitelist {
+				replaceDomain := func(metadata *C.Metadata, host string) {
+					if sd.domainCanReplace(host) {
+						replaceDomain(metadata, host, overrideDest)
+					} else {
+						log.Debugln("[Sniffer] Skip sni[%s]", host)
+					}
 				}
+
+				if wrapable, ok := current.Sniffer.(sniffer.MultiPacketSniffer); ok {
+					return wrapable.WrapperSender(packetSender, replaceDomain)
+				}
+
+				host, err := current.SniffData(packet.Data())
+				if err != nil {
+					continue
+				}
+
+				replaceDomain(metadata, host)
+				return packetSender
 			}
 		}
+	}
+	return packetSender
+}
 
-		// Protocol sniffers report no domain, so they are dispatched on their
-		// own and their outcome does not feed the domain result below.
-		protocolInWhitelist := false
-		for _, current := range sd.protocolSniffers {
-			if snifferSupportsNetwork(current, C.TCP) && current.SupportPort(metadata.DstPort) {
-				protocolInWhitelist = true
+// TCPSniff returns true if the connection is sniffed to have a domain.
+//
+// As with UDPSniff, protocol sniffers run whenever skip-src-address and
+// skip-dst-address allow, independently of whether a domain is sniffed.
+func (sd *Dispatcher) TCPSniff(conn *N.BufferedConn, metadata *C.Metadata) bool {
+	if sd.skipAddress(metadata) {
+		return false
+	}
+
+	sniffed, waited := false, false
+	if sd.shouldOverride(metadata) {
+		sniffed, waited = sd.tcpSniffDomain(conn, metadata)
+	}
+
+	// Protocol sniffers report no domain, so their outcome does not feed the
+	// result. When domain sniffing already waited for the client and nothing
+	// came, waiting again would only delay a server-first connection further.
+	if sd.hasProtocolSniffer(C.TCP, metadata.DstPort) && !(waited && conn.Buffered() == 0) {
+		sd.sniffStreamProtocol(conn, metadata)
+	}
+	return sniffed
+}
+
+// tcpSniffDomain recovers the domain of a TCP connection. waited reports
+// whether it read from the connection, successfully or not.
+func (sd *Dispatcher) tcpSniffDomain(conn *N.BufferedConn, metadata *C.Metadata) (sniffed bool, waited bool) {
+	inWhitelist := false
+	for _, current := range sd.sniffers {
+		if current.supportsNetwork(C.TCP) {
+			inWhitelist = current.SupportPort(metadata.DstPort)
+			if inWhitelist {
 				break
 			}
 		}
-
-		if !inWhitelist && !protocolInWhitelist {
-			return false
-		}
-		forceSniffer := sd.forceSniff(metadata)
-
-		dst := metadata.AddrPort()
-		if !forceSniffer {
-			if count, ok := sd.skipList.Get(dst); ok && count > 5 {
-				log.Debugln("[Sniffer] Skip sniffing[%s] due to multiple failures", dst)
-				return false
-			}
-		}
-
-		if protocolInWhitelist {
-			sd.sniffStreamProtocol(conn, metadata)
-		}
-
-		// Nothing else to do when only a protocol was asked for: it yields no
-		// domain, which is what this function reports.
-		if !inWhitelist {
-			return false
-		}
-
-		host, config, err := sd.sniffDomain(conn, metadata)
-		if err != nil {
-			if !forceSniffer {
-				sd.cacheSniffFailed(metadata)
-			}
-			log.Debugln("[Sniffer] All sniffing sniff failed with from [%s:%d] to [%s:%d]", metadata.SrcIP, metadata.SrcPort, metadata.String(), metadata.DstPort)
-			return false
-		}
-
-		if !sd.domainCanReplace(host) {
-			log.Debugln("[Sniffer] Skip sni[%s]", host)
-			return false
-		}
-
-		sd.skipList.Delete(dst)
-
-		replaceDomain(metadata, host, config.OverrideDest)
-		return true
 	}
-	return false
+
+	if !inWhitelist {
+		return false, false
+	}
+	forceSniffer := sd.forceSniff(metadata)
+
+	dst := metadata.AddrPort()
+	if !forceSniffer {
+		if count, ok := sd.skipList.Get(dst); ok && count > 5 {
+			log.Debugln("[Sniffer] Skip sniffing[%s] due to multiple failures", dst)
+			return false, false
+		}
+	}
+
+	host, config, err := sd.sniffDomain(conn, metadata)
+	if err != nil {
+		if !forceSniffer {
+			sd.cacheSniffFailed(metadata)
+		}
+		log.Debugln("[Sniffer] All sniffing sniff failed with from [%s:%d] to [%s:%d]", metadata.SrcIP, metadata.SrcPort, metadata.String(), metadata.DstPort)
+		return false, true
+	}
+
+	if !sd.domainCanReplace(host) {
+		log.Debugln("[Sniffer] Skip sni[%s]", host)
+		return false, true
+	}
+
+	sd.skipList.Delete(dst)
+
+	replaceDomain(metadata, host, config.OverrideDest)
+	return true, true
 }
 
 func replaceDomain(metadata *C.Metadata, host string, overrideDest bool) {
