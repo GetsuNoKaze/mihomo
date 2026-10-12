@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/metacubex/mihomo/adapter/outbound"
+	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/tunnel/statistic"
 
@@ -31,10 +32,12 @@ func getUsers(t *testing.T, h http.Handler, query string) []statistic.UserStat {
 func TestTrafficUsers(t *testing.T) {
 	h := router(false, testSecret, "", Cors{})
 	um := statistic.DefaultManager.Users()
+	// the counters are global and cumulative: fresh inbound names keep -count=N runs apart
+	restIn, restOther := "rest-in-"+utils.NewUUIDV4().String(), "rest-other-"+utils.NewUUIDV4().String()
 	ip := netip.MustParseAddr("192.0.2.1")
-	a := um.Acquire(statistic.UserKey{Inbound: "rest-in", User: "alice"}, ip)
-	b := um.Acquire(statistic.UserKey{Inbound: "rest-in", User: "bob"}, ip)
-	o := um.Acquire(statistic.UserKey{Inbound: "rest-other", User: "alice"}, ip)
+	a := um.Acquire(statistic.UserKey{Inbound: restIn, User: "alice"}, ip)
+	b := um.Acquire(statistic.UserKey{Inbound: restIn, User: "bob"}, ip)
+	o := um.Acquire(statistic.UserKey{Inbound: restOther, User: "alice"}, ip)
 	defer um.Release(a, ip)
 	defer um.Release(b, ip)
 	defer um.Release(o, ip)
@@ -46,7 +49,7 @@ func TestTrafficUsers(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, serveRouter(t, h, http.MethodGet, "/traffic/users", ""))
 	assert.Equal(t, http.StatusBadRequest, serveRouter(t, h, http.MethodGet, "/traffic/users?reset=maybe", testSecret))
 
-	stats := getUsers(t, h, "?inbound=rest-in")
+	stats := getUsers(t, h, "?inbound="+restIn)
 	require.Len(t, stats, 2)
 	assert.Equal(t, "alice", stats[0].User)
 	assert.Equal(t, int64(10), stats[0].Up)
@@ -61,22 +64,22 @@ func TestTrafficUsers(t *testing.T) {
 	for _, s := range stats {
 		inbounds = append(inbounds, s.Inbound)
 	}
-	assert.Contains(t, inbounds, "rest-in")
-	assert.Contains(t, inbounds, "rest-other")
+	assert.Contains(t, inbounds, restIn)
+	assert.Contains(t, inbounds, restOther)
 
 	// reset drains only the filtered user
-	stats = getUsers(t, h, "?inbound=rest-in&user=alice&reset=true")
+	stats = getUsers(t, h, "?inbound="+restIn+"&user=alice&reset=true")
 	require.Len(t, stats, 1)
 	assert.Equal(t, int64(10), stats[0].Up)
 	a.AddUp(2)
-	stats = getUsers(t, h, "?inbound=rest-in&user=alice&reset=1")
+	stats = getUsers(t, h, "?inbound="+restIn+"&user=alice&reset=1")
 	require.Len(t, stats, 1)
 	assert.Equal(t, int64(2), stats[0].Up)
 	assert.Equal(t, int64(0), stats[0].Down)
-	stats = getUsers(t, h, "?inbound=rest-in&user=bob&reset=true")
+	stats = getUsers(t, h, "?inbound="+restIn+"&user=bob&reset=true")
 	assert.Equal(t, int64(1), stats[0].Up, "bob was not drained by alice's reset")
 	// without reset the counters stay cumulative
-	stats = getUsers(t, h, "?inbound=rest-in&user=alice")
+	stats = getUsers(t, h, "?inbound="+restIn+"&user=alice")
 	assert.Equal(t, int64(12), stats[0].Up)
 
 	assert.Empty(t, getUsers(t, h, "?inbound=nope"))

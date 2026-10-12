@@ -1,14 +1,17 @@
 package statistic_test
 
 import (
+	"errors"
 	"io"
 	"net"
 	"net/netip"
+	"sync"
 	"testing"
 
 	"github.com/metacubex/mihomo/adapter/outbound"
 	"github.com/metacubex/mihomo/common/buf"
 	N "github.com/metacubex/mihomo/common/net"
+	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/tunnel/statistic"
 
@@ -27,6 +30,13 @@ func userMetadata(inbound, user, src string) *C.Metadata {
 		InName:  inbound,
 		InUser:  user,
 	}
+}
+
+// uniqueInbound returns a fresh inbound name: the counters of
+// statistic.DefaultManager are global and cumulative, so every run of a test
+// (-count=N) needs its own keys.
+func uniqueInbound(name string) string {
+	return name + "-" + utils.NewUUIDV4().String()
 }
 
 func userStat(t *testing.T, inbound, user string) statistic.UserStat {
@@ -48,7 +58,7 @@ func tcpPair(t *testing.T, metadata *C.Metadata, peek int64) (C.Conn, net.Conn) 
 }
 
 func TestTCPTrackerUserCounting(t *testing.T) {
-	const inbound = "tcp-tracker-test"
+	inbound := uniqueInbound("tcp-tracker-test")
 	tracker, remote := tcpPair(t, userMetadata(inbound, "alice", "::ffff:10.1.1.1"), 7)
 
 	go func() {
@@ -104,7 +114,7 @@ func TestTCPTrackerUserCounting(t *testing.T) {
 }
 
 func TestTrackerWithoutUser(t *testing.T) {
-	const inbound = "tracker-anonymous-test"
+	inbound := uniqueInbound("tracker-anonymous-test")
 	before := len(statistic.DefaultManager.Users().SnapshotFunc(func(k statistic.UserKey) bool { return k.Inbound == inbound }))
 	tracker, _ := tcpPair(t, userMetadata(inbound, "", "10.1.1.2"), 0)
 	defer tracker.Close()
@@ -114,7 +124,7 @@ func TestTrackerWithoutUser(t *testing.T) {
 }
 
 func TestTrackerUserStatsDisabled(t *testing.T) {
-	const inbound = "tracker-disabled-test"
+	inbound := uniqueInbound("tracker-disabled-test")
 	statistic.SetUserStatsEnabled(false)
 	defer statistic.SetUserStatsEnabled(true)
 	tracker, _ := tcpPair(t, userMetadata(inbound, "alice", "10.1.1.3"), 5)
@@ -123,42 +133,140 @@ func TestTrackerUserStatsDisabled(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestTCPTrackerRelay(t *testing.T) {
-	const inbound = "tcp-relay-test"
+// tcpClientPair returns both ends of a loopback TCP connection.
+func tcpClientPair(t *testing.T) (net.Conn, net.Conn) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer ln.Close()
-	const upSize, downSize = 300_000, 700_000
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, _ := ln.Accept()
+		accepted <- c
+	}()
+	client, err := net.Dial("tcp", ln.Addr().String())
+	require.NoError(t, err)
+	local := <-accepted
+	require.NotNil(t, local)
+	return client, local
+}
+
+// TestTCPTrackerRelay checks the exact counts of a relay through a tracker,
+// to a client behind a pipe (copied buffer by buffer) and behind a socket
+// (spliced on Linux).
+func TestTCPTrackerRelay(t *testing.T) {
+	for name, clientPair := range map[string]func(*testing.T) (net.Conn, net.Conn){
+		"pipe": func(*testing.T) (net.Conn, net.Conn) { return net.Pipe() },
+		"tcp":  tcpClientPair,
+	} {
+		t.Run(name, func(t *testing.T) {
+			inbound := uniqueInbound("tcp-relay-test")
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			defer ln.Close()
+			const upSize, downSize = 300_000, 700_000
+			go func() {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				defer c.Close()
+				_, _ = io.CopyN(io.Discard, c, upSize)
+				_, _ = c.Write(make([]byte, downSize))
+			}()
+			raw, err := net.Dial("tcp", ln.Addr().String())
+			require.NoError(t, err)
+			globalUp, globalDown := statistic.DefaultManager.Total()
+			tracker := statistic.NewTCPTracker(outbound.NewConn(raw, outbound.NewDirect()), statistic.DefaultManager,
+				userMetadata(inbound, "bob", "10.1.1.4"), nil, 0, 0, true)
+
+			client, local := clientPair(t)
+			go func() {
+				_, _ = client.Write(make([]byte, upSize))
+				_, _ = io.CopyN(io.Discard, client, downSize)
+				_ = client.Close()
+			}()
+			N.Relay(local, tracker)
+
+			s := userStat(t, inbound, "bob")
+			assert.Equal(t, int64(upSize), s.Up)
+			assert.Equal(t, int64(downSize), s.Down)
+			assert.Equal(t, int64(0), s.Conns)
+			assert.Equal(t, int64(upSize), tracker.Info().UploadTotal.Load())
+			assert.Equal(t, int64(downSize), tracker.Info().DownloadTotal.Load())
+			globalUpAfter, globalDownAfter := statistic.DefaultManager.Total()
+			assert.Equal(t, int64(upSize), globalUpAfter-globalUp)
+			assert.Equal(t, int64(downSize), globalDownAfter-globalDown)
+		})
+	}
+}
+
+var errStreamClosed = errors.New("stream closed")
+
+// deliverThenFailConn is the client side of a multiplexed stream that takes
+// the bytes of a write and then reports the write as failed, as an HTTP/2
+// stream does when the client resets it right after the DATA frame went out.
+type deliverThenFailConn struct {
+	net.Conn // the reading half: blocks until the relay closes it
+
+	mu        sync.Mutex
+	delivered int
+}
+
+func (c *deliverThenFailConn) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.delivered += len(p)
+	return len(p), errStreamClosed
+}
+
+func (c *deliverThenFailConn) Delivered() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.delivered
+}
+
+// TestTCPTrackerRelayFailedWriteIsCounted: the relay copy counts a buffer
+// after its write succeeded; a write that delivered the bytes but reported an
+// error must still be counted, in the per-connection, per-user and global
+// totals alike.
+func TestTCPTrackerRelayFailedWriteIsCounted(t *testing.T) {
+	inbound := uniqueInbound("tcp-relay-failed-write-test")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+	const downSize = 9_000
+	served := make(chan struct{})
+	defer close(served)
 	go func() {
 		c, err := ln.Accept()
 		if err != nil {
 			return
 		}
 		defer c.Close()
-		_, _ = io.CopyN(io.Discard, c, upSize)
 		_, _ = c.Write(make([]byte, downSize))
+		<-served // keep the connection open: the copy ends on the failed write only
 	}()
 	raw, err := net.Dial("tcp", ln.Addr().String())
 	require.NoError(t, err)
+	_, globalDown := statistic.DefaultManager.Total()
 	tracker := statistic.NewTCPTracker(outbound.NewConn(raw, outbound.NewDirect()), statistic.DefaultManager,
-		userMetadata(inbound, "bob", "10.1.1.4"), nil, 0, 0, true)
+		userMetadata(inbound, "dave", "10.1.1.7"), nil, 0, 0, true)
 
-	client, local := net.Pipe()
-	go func() {
-		_, _ = client.Write(make([]byte, upSize))
-		_, _ = io.CopyN(io.Discard, client, downSize)
-		_ = client.Close()
-	}()
-	N.Relay(local, tracker)
+	reader, peer := net.Pipe()
+	defer peer.Close()
+	client := &deliverThenFailConn{Conn: reader}
+	N.Relay(client, tracker)
 
-	s := userStat(t, inbound, "bob")
-	assert.Equal(t, int64(upSize), s.Up)
-	assert.Equal(t, int64(downSize), s.Down)
-	assert.Equal(t, int64(0), s.Conns)
+	delivered := int64(client.Delivered())
+	require.Positive(t, delivered)
+	assert.Equal(t, delivered, tracker.Info().DownloadTotal.Load(), "connection")
+	assert.Equal(t, delivered, userStat(t, inbound, "dave").Down, "user")
+	_, globalDownAfter := statistic.DefaultManager.Total()
+	assert.Equal(t, delivered, globalDownAfter-globalDown, "global")
 }
 
 func TestUDPTrackerUserCounting(t *testing.T) {
-	const inbound = "udp-tracker-test"
+	inbound := uniqueInbound("udp-tracker-test")
 	server, err := net.ListenPacket("udp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer server.Close()
@@ -208,7 +316,7 @@ func TestUDPTrackerUserCounting(t *testing.T) {
 func TestInternalTrackersAreNotAttributed(t *testing.T) {
 	// the trackers of the DNS dialer and of dialer-proxy chains (pushToManager
 	// false) sit under a tracker that already counts the user
-	const inbound = "internal-tracker-test"
+	inbound := uniqueInbound("internal-tracker-test")
 	local, remote := net.Pipe()
 	defer remote.Close()
 	tracker := statistic.NewTCPTracker(outbound.NewConn(local, outbound.NewDirect()), statistic.DefaultManager,
