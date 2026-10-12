@@ -344,6 +344,7 @@ func resolveMetadata(metadata *C.Metadata) (proxy C.Proxy, rule C.Rule, err erro
 				} else {
 					log.Debugln("[DNS] %s --> %s", metadata.Host, ip.String())
 					metadata.DstIP = ip
+					metadata.DstIPChecked = true
 				}
 				resolved = true
 			}
@@ -571,7 +572,7 @@ func handleTCPConn(connCtx C.ConnContext) {
 	var peekBytes []byte
 	var peekLen int
 
-	ctx, cancel := context.WithTimeout(context.Background(), C.DefaultTCPTimeout)
+	ctx, cancel := tcpConnectContext(context.Background())
 	defer cancel()
 	remoteConn, err := retry(ctx, func(ctx context.Context) (remoteConn C.Conn, err error) {
 		remoteConn, err = proxy.DialContext(ctx, dialMetadata)
@@ -721,6 +722,9 @@ func getRules(metadata *C.Metadata) []C.Rule {
 }
 
 func shouldStopRetry(err error) bool {
+	if isLocalResourceExhaustion(err) {
+		return true
+	}
 	if errors.Is(err, resolver.ErrIPNotFound) {
 		return true
 	}

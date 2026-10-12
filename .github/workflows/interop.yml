@@ -1,0 +1,116 @@
+name: Xray interop
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+    paths:
+      - "transport/**"
+      - "component/tls/**"
+      - "component/ech/**"
+      - "listener/**"
+      - "adapter/outbound/**"
+      - "go.mod"
+      - "go.sum"
+      - "test/interop/**"
+      - ".github/workflows/interop.yml"
+  push:
+    branches:
+      - dev
+  schedule:
+    - cron: "17 4 * * 1" # weekly, Monday 04:17 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Pinned Xray-core release. To bump: change both values; the hash is the
+  # SHA2-256 line of Xray-linux-64.zip.dgst on the release page.
+  XRAY_VERSION: v26.10.10
+  XRAY_SHA256: 72a5fde819713a103c6fc26a87aa025c1518c918a34eba4bc38d64dc0728e5d9
+
+jobs:
+  interop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: 0
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        id: setup_go_0
+        continue-on-error: true
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
+          go-version: '1.26'
+
+      - name: Wait before retrying the Go download
+        if: ${{ steps.setup_go_0.outcome == 'failure' }}
+        run: sleep 30
+
+      - name: Set up Go (retry)
+        if: ${{ steps.setup_go_0.outcome == 'failure' }}
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-download-base-url: 'https://github.com/MetaCubeX/go/releases/download/build'
+          go-version: '1.26'
+
+      - name: Verify Go installation
+        run: go version
+
+      - name: Download Xray-core
+        run: |
+          set -euo pipefail
+          base="https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}"
+          mkdir -p "$RUNNER_TEMP/xray"
+          cd "$RUNNER_TEMP/xray"
+          curl -fsSL --retry 3 --retry-delay 5 -o Xray-linux-64.zip "$base/Xray-linux-64.zip"
+          curl -fsSL --retry 3 --retry-delay 5 -o Xray-linux-64.zip.dgst "$base/Xray-linux-64.zip.dgst"
+          dgst=$(sed -n 's/^SHA2-256= *\([0-9a-f]\{64\}\).*/\1/p' Xray-linux-64.zip.dgst)
+          actual=$(sha256sum Xray-linux-64.zip | cut -d' ' -f1)
+          echo "pinned: $XRAY_SHA256"
+          echo "dgst:   $dgst"
+          echo "actual: $actual"
+          if [ -z "$dgst" ] || [ "$actual" != "$dgst" ] || [ "$actual" != "$XRAY_SHA256" ]; then
+            echo "::error::Xray-linux-64.zip SHA256 mismatch"
+            exit 1
+          fi
+          unzip -q Xray-linux-64.zip xray
+          chmod +x xray
+          ./xray version
+          echo "XRAY_BIN=$RUNNER_TEMP/xray/xray" >> "$GITHUB_ENV"
+
+      - name: Build Citrus
+        run: |
+          go build -trimpath -o "$RUNNER_TEMP/citrus" .
+          echo "CITRUS_BIN=$RUNNER_TEMP/citrus" >> "$GITHUB_ENV"
+
+      - name: Vet
+        working-directory: test/interop
+        run: go vet -tags interop ./...
+
+      - name: Interop tests
+        working-directory: test/interop
+        env:
+          INTEROP_LOG_DIR: ${{ runner.temp }}/interop-logs
+        run: go test -tags interop -v -count=1 -timeout 10m ./...
+
+      - name: Upload logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: interop-logs
+          path: ${{ runner.temp }}/interop-logs
+          if-no-files-found: ignore
+          retention-days: 14
