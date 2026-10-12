@@ -8,6 +8,7 @@ package sniffer
 // Copyright (C) 2022 by nekohasekai <contact-sagernet@sekai.icu>
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"strings"
@@ -74,7 +75,7 @@ func (bt *BitTorrentSniffer) SniffProtocol(network C.NetWork, b []byte) (string,
 		if isWireGuard(b) {
 			return "", errNotBitTorrent
 		}
-		if SniffUTP(b) != nil && SniffUDPTracker(b) != nil {
+		if SniffUTP(b) != nil && SniffUDPTracker(b) != nil && SniffDHT(b) != nil {
 			return "", errNotBitTorrent
 		}
 	default:
@@ -232,4 +233,182 @@ func SniffUDPTracker(b []byte) error {
 		return errNotBitTorrent
 	}
 	return nil
+}
+
+// KRPC limits: the deepest message (a get_peers response holding a list of
+// peer strings) nests three levels, and a DHT datagram fits one MTU
+const (
+	dhtMaxDepth   = 8
+	dhtNodeIDSize = 20
+)
+
+// SniffDHT detects a message of the BitTorrent DHT, a KRPC query, response or
+// error. See https://www.bittorrent.org/beps/bep_0005.html and
+// https://www.bittorrent.org/beps/bep_0042.html
+//
+// The datagram must be exactly one well formed bencoded dictionary whose "y"
+// is "q", "r" or "e": a query carries "q" and an argument dictionary "a" with
+// a 20 byte "id", a response a dictionary "r" with a 20 byte "id", an error a
+// list "e". Keys are sorted in bencode, so in practice queries start with
+// "d1:ad2:id20:", responses with "d1:rd2:id20:" or, with the BEP 42 "ip" key,
+// "d2:ip6:", and errors with "d1:eli", but the full parse is what decides.
+func SniffDHT(b []byte) error {
+	if len(b) < 2 || b[0] != 'd' || b[len(b)-1] != 'e' {
+		return errNotBitTorrent
+	}
+	// the cheap prefix check keeps the parser away from almost everything
+	// that is not KRPC
+	if !bytes.HasPrefix(b, []byte("d1:a")) && !bytes.HasPrefix(b, []byte("d1:r")) &&
+		!bytes.HasPrefix(b, []byte("d1:e")) && !bytes.HasPrefix(b, []byte("d2:ip")) {
+		return errNotBitTorrent
+	}
+
+	fields, end, ok := bencodeDict(b, 0, 0)
+	if !ok || end != len(b) {
+		return errNotBitTorrent
+	}
+	if _, ok := bencodeString(fields["t"]); !ok {
+		return errNotBitTorrent
+	}
+	y, ok := bencodeString(fields["y"])
+	if !ok {
+		return errNotBitTorrent
+	}
+	switch y {
+	case "q":
+		if q, ok := bencodeString(fields["q"]); !ok || q == "" {
+			return errNotBitTorrent
+		}
+		if !dhtHasNodeID(fields["a"]) {
+			return errNotBitTorrent
+		}
+	case "r":
+		if !dhtHasNodeID(fields["r"]) {
+			return errNotBitTorrent
+		}
+	case "e":
+		if e := fields["e"]; len(e) == 0 || e[0] != 'l' {
+			return errNotBitTorrent
+		}
+	default:
+		return errNotBitTorrent
+	}
+	return nil
+}
+
+// dhtHasNodeID reports whether raw is a dictionary holding the 20 byte node
+// id every query and response carries
+func dhtHasNodeID(raw []byte) bool {
+	if len(raw) == 0 || raw[0] != 'd' {
+		return false
+	}
+	fields, _, ok := bencodeDict(raw, 0, 0)
+	if !ok {
+		return false
+	}
+	id, ok := bencodeString(fields["id"])
+	return ok && len(id) == dhtNodeIDSize
+}
+
+// bencodeDict parses the dictionary at b[pos] and returns its entries as raw
+// bencoded values along with the offset past it. Keys must be byte strings.
+func bencodeDict(b []byte, pos, depth int) (map[string][]byte, int, bool) {
+	if depth > dhtMaxDepth || pos >= len(b) || b[pos] != 'd' {
+		return nil, 0, false
+	}
+	fields := make(map[string][]byte)
+	pos++
+	for pos < len(b) && b[pos] != 'e' {
+		key, next, ok := bencodeStringAt(b, pos)
+		if !ok {
+			return nil, 0, false
+		}
+		end, ok := bencodeSkip(b, next, depth+1)
+		if !ok {
+			return nil, 0, false
+		}
+		fields[key] = b[next:end]
+		pos = end
+	}
+	if pos >= len(b) {
+		return nil, 0, false
+	}
+	return fields, pos + 1, true
+}
+
+// bencodeSkip returns the offset past the bencoded value at b[pos]
+func bencodeSkip(b []byte, pos, depth int) (int, bool) {
+	if depth > dhtMaxDepth || pos >= len(b) {
+		return 0, false
+	}
+	switch c := b[pos]; {
+	case c == 'i':
+		pos++
+		if pos < len(b) && b[pos] == '-' {
+			pos++
+		}
+		start := pos
+		for pos < len(b) && b[pos] >= '0' && b[pos] <= '9' {
+			pos++
+		}
+		if pos == start || pos >= len(b) || b[pos] != 'e' {
+			return 0, false
+		}
+		return pos + 1, true
+	case c == 'l' || c == 'd':
+		pos++
+		for pos < len(b) && b[pos] != 'e' {
+			if c == 'd' {
+				_, next, ok := bencodeStringAt(b, pos)
+				if !ok {
+					return 0, false
+				}
+				pos = next
+			}
+			next, ok := bencodeSkip(b, pos, depth+1)
+			if !ok {
+				return 0, false
+			}
+			pos = next
+		}
+		if pos >= len(b) {
+			return 0, false
+		}
+		return pos + 1, true
+	case c >= '0' && c <= '9':
+		_, next, ok := bencodeStringAt(b, pos)
+		return next, ok
+	}
+	return 0, false
+}
+
+// bencodeStringAt parses the byte string at b[pos] and returns it along with
+// the offset past it
+func bencodeStringAt(b []byte, pos int) (string, int, bool) {
+	length := 0
+	start := pos
+	for pos < len(b) && b[pos] >= '0' && b[pos] <= '9' {
+		length = length*10 + int(b[pos]-'0')
+		if length > len(b) {
+			return "", 0, false
+		}
+		pos++
+	}
+	if pos == start || pos >= len(b) || b[pos] != ':' {
+		return "", 0, false
+	}
+	pos++
+	if length > len(b)-pos {
+		return "", 0, false
+	}
+	return string(b[pos : pos+length]), pos + length, true
+}
+
+// bencodeString decodes raw as a whole byte string
+func bencodeString(raw []byte) (string, bool) {
+	if len(raw) == 0 {
+		return "", false
+	}
+	s, end, ok := bencodeStringAt(raw, 0)
+	return s, ok && end == len(raw)
 }

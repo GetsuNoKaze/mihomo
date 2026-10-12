@@ -11,6 +11,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"math/rand"
+	"strconv"
+	"strings"
 	"testing"
 
 	C "github.com/metacubex/mihomo/constant"
@@ -241,4 +243,78 @@ func TestBitTorrentIsProtocolSniffer(t *testing.T) {
 	assert.True(t, bt.SupportPort(1))
 	assert.True(t, bt.SupportPort(6881))
 	assert.True(t, bt.SupportPort(65535))
+}
+
+// krpc assembles a KRPC message from already bencoded pieces
+func krpc(parts ...string) []byte {
+	return []byte("d" + strings.Join(parts, "") + "e")
+}
+
+func bstr(s string) string {
+	return strconv.Itoa(len(s)) + ":" + s
+}
+
+// DHT messages built after the examples in BEP 5, with binary node ids and
+// info hashes as real clients send them, plus the BEP 42 "ip" key and the
+// client version "v" key libtorrent and others add.
+func TestSniffDHT(t *testing.T) {
+	nodeID := "\x8a\x1f\x00\xe3\x52\x9d\x0c\x77\x10\x2b\xfe\x01\x99\x4d\x5e\xa0\x3c\x7b\x00\x11"
+	infoHash := "\xd2\x74\x8f\x9a\x0b\xc3\x1e\x55\x60\x02\xaf\x9e\x13\x37\xbe\xef\x00\x42\x8c\x01"
+	peer := "\xc0\xa8\x01\x02\x1a\xe1"
+	compactNode := nodeID + "\x5d\xb8\xd8\x22\x1a\xe1"
+	tid := "\x9c\x01"
+	version := "LT\x02\x00"
+
+	bt, err := NewBitTorrentSniffer(SnifferConfig{})
+	assert.NoError(t, err)
+
+	for name, pkt := range map[string][]byte{
+		"ping query":    krpc("1:ad2:id", bstr(nodeID), "e1:q4:ping1:t", bstr(tid), "1:y1:q"),
+		"ping response": krpc("1:rd2:id", bstr(nodeID), "e1:t", bstr(tid), "1:y1:r"),
+		"find_node query": krpc("1:ad2:id", bstr(nodeID), "6:target", bstr(infoHash), "e1:q9:find_node1:t", bstr(tid),
+			"1:v", bstr(version), "1:y1:q"),
+		"find_node response": krpc("1:rd2:id", bstr(nodeID), "5:nodes", bstr(compactNode+compactNode), "e1:t", bstr(tid), "1:y1:r"),
+		"get_peers query": krpc("1:ad2:id", bstr(nodeID), "9:info_hash", bstr(infoHash), "e1:q9:get_peers1:t", bstr(tid),
+			"1:v", bstr(version), "1:y1:q"),
+		"get_peers response with values": krpc("1:rd2:id", bstr(nodeID), "5:token", bstr("\x01\x02\x03\x04\x05\x06\x07\x08"),
+			"6:valuesl", bstr(peer), bstr(peer), "ee1:t", bstr(tid), "1:y1:r"),
+		"announce_peer query": krpc("1:ad2:id", bstr(nodeID), "12:implied_porti1e9:info_hash", bstr(infoHash),
+			"4:porti6881e5:token", bstr("aoeusnth"), "e1:q13:announce_peer1:t", bstr(tid), "1:y1:q"),
+		"BEP 42 response": krpc("2:ip", bstr(peer), "1:rd2:id", bstr(nodeID), "e1:t", bstr(tid), "1:v", bstr(version), "1:y1:r"),
+		"error":           krpc("1:eli201e", bstr("A Generic Error Ocurred"), "e1:t", bstr(tid), "1:y1:e"),
+	} {
+		assert.NoError(t, SniffDHT(pkt), name)
+		protocol, err := bt.SniffProtocol(C.UDP, pkt)
+		assert.NoError(t, err, name)
+		assert.Equal(t, C.ProtocolBitTorrent, protocol, name)
+
+		// DHT is UDP only
+		_, err = bt.SniffProtocol(C.TCP, pkt)
+		assert.Error(t, err, name)
+	}
+}
+
+func TestSniffNotDHT(t *testing.T) {
+	nodeID := strings.Repeat("\xab", 20)
+	ping := krpc("1:ad2:id", bstr(nodeID), "e1:q4:ping1:t2:aa1:y1:q")
+
+	nested := "d1:ad2:id" + bstr(nodeID) + "1:x" + strings.Repeat("l", 64) + strings.Repeat("e", 64) + "e1:q4:ping1:t2:aa1:y1:qe"
+
+	for name, pkt := range map[string][]byte{
+		"truncated":          ping[:len(ping)-1],
+		"trailing data":      append(append([]byte(nil), ping...), 'e'),
+		"short node id":      krpc("1:ad2:id", bstr(nodeID[:19]), "e1:q4:ping1:t2:aa1:y1:q"),
+		"no node id":         krpc("1:ad6:target", bstr(nodeID), "e1:q4:ping1:t2:aa1:y1:q"),
+		"query without name": krpc("1:ad2:id", bstr(nodeID), "e1:t2:aa1:y1:q"),
+		"no transaction id":  krpc("1:ad2:id", bstr(nodeID), "e1:q4:ping1:y1:q"),
+		"unknown type":       krpc("1:ad2:id", bstr(nodeID), "e1:q4:ping1:t2:aa1:y1:x"),
+		"response as query":  krpc("1:rd2:id", bstr(nodeID), "e1:t2:aa1:y1:q"),
+		"error without list": krpc("1:ei201e1:t2:aa1:y1:e"),
+		"string past end":    []byte("d1:ad2:id99:abce"),
+		"deep nesting":       []byte(nested),
+		"json":               []byte(`{"a":{"id":"x"},"y":"q"}`),
+		"plain d...e":        []byte("dns lookup for example.com failed, please retry later: code e"),
+	} {
+		assert.Error(t, SniffDHT(pkt), name)
+	}
 }

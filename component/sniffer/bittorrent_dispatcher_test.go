@@ -82,6 +82,8 @@ func TestDispatcherUDPSniffProtocol(t *testing.T) {
 	for name, payload := range map[string]string{
 		"utp":     "410277ef0b1fb1f60000000000040000c233000000080000000000000000",
 		"tracker": "00000417271019800000000078e90560",
+		// the BEP 5 ping query example
+		"dht": "64313a6164323a696432303a6162636465666768696a3031323334353637383965313a71343a70696e67313a74323a6161313a79313a7165",
 	} {
 		data, err := hex.DecodeString(payload)
 		assert.NoError(t, err)
