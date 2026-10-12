@@ -8,7 +8,7 @@ import (
 	N "github.com/metacubex/mihomo/common/net"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/transport/trusttunnel"
-	"github.com/metacubex/mihomo/transport/vmess"
+	"github.com/metacubex/mihomo/transport/v2ray"
 )
 
 type TrustTunnel struct {
@@ -122,7 +122,7 @@ func NewTrustTunnel(option TrustTunnelOption) (*TrustTunnel, error) {
 	if err != nil {
 		return nil, err
 	}
-	tlsConfig := &vmess.TLSConfig{
+	tlsConfig := &v2ray.TLSConfig{
 		Host:              option.SNI,
 		SkipCertVerify:    option.SkipCertVerify,
 		NameCertVerify:    option.NameCertVerify,
