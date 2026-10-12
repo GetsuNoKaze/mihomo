@@ -415,7 +415,7 @@ type RawConfig struct {
 	TProxyPort                    int                     `yaml:"tproxy-port" json:"tproxy-port"`
 	MixedPort                     int                     `yaml:"mixed-port" json:"mixed-port"`
 	ShadowSocksConfig             string                  `yaml:"ss-config" json:"ss-config"`
-	VmessConfig                   string                  `yaml:"vmess-config" json:"vmess-config"`
+	VmessConfig                   string                  `yaml:"vmess-config" json:"vmess-config"` // removed with VMess, rejected when set
 	InboundTfo                    bool                    `yaml:"inbound-tfo" json:"inbound-tfo"`
 	InboundMPTCP                  bool                    `yaml:"inbound-mptcp" json:"inbound-mptcp"`
 	Authentication                []string                `yaml:"authentication" json:"authentication"`
@@ -779,6 +779,9 @@ func temporaryUpdateGeneral(general *General) func()
 func parseGeneral(cfg *RawConfig) (*General, error) {
 	if cfg.GlobalClientFingerprint != "" {
 		log.Errorln("The `global-client-fingerprint` configuration is removed, please set `client-fingerprint` directly on the proxy instead")
+	}
+	if cfg.VmessConfig != "" {
+		return nil, fmt.Errorf("vmess-config: %w", C.ErrVMessRemoved)
 	}
 	if err := T.ValidateTCPConnectTimeout(cfg.TCPConnectTimeout); err != nil {
 		return nil, fmt.Errorf("invalid tcp-connect-timeout: %w", err)

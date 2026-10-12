@@ -336,6 +336,12 @@ func patchConfigs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if general.VmessConfig != nil && *general.VmessConfig != "" {
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, newError("vmess-config: "+C.ErrVMessRemoved.Error()))
+		return
+	}
+
 	if general.TCPConnectTimeout != nil {
 		if err := tunnel.SetTCPConnectTimeout(*general.TCPConnectTimeout); err != nil {
 			render.Status(r, http.StatusBadRequest)

@@ -22,7 +22,7 @@ const (
 )
 
 func TestConvertsV2RayXrayTLSParams(t *testing.T) {
-	for _, scheme := range []string{"vless", "vmess", "trojan"} {
+	for _, scheme := range []string{"vless", "trojan"} {
 		t.Run(scheme, func(t *testing.T) {
 			uri := scheme + "://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=tls&type=tcp&sni=cdn.example.com&fp=hellofirefox_148" +
 				"&pcs=" + url.QueryEscape(testPin1+","+testPin2) +
@@ -73,7 +73,7 @@ func TestConvertsV2RayXrayRealityParams(t *testing.T) {
 	key, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	require.NoError(t, err)
 	pqv := base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes())
-	for _, scheme := range []string{"vless", "vmess"} {
+	for _, scheme := range []string{"vless"} {
 		t.Run(scheme, func(t *testing.T) {
 			uri := scheme + "://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=reality&type=tcp&sni=www.example.com&fp=hellosafari_26_3" +
 				"&pbk=ppQ9FwLrLIa0AOrp1WvcyiaQ37vg2WSy_CD4bIdiTUw&sid=6ba85179&spx=%2Fpath%3Fq%3D1&pqv=" + pqv

@@ -14,6 +14,16 @@ func ParseProxy(mapping map[string]any, options ...ProxyOption) (C.Proxy, error)
 	if !existType {
 		return nil, fmt.Errorf("missing type")
 	}
+	if proxyType != "vmess" {
+		// mKCP, mekya and TLSMirror were VMess-only and went away with it.
+		switch network, _ := mapping["network"].(string); network {
+		case "mkcp", "kcp", "mekya":
+			return nil, fmt.Errorf("%w: network %s", C.ErrRemovedProtocol, network)
+		}
+		if _, ok := mapping["tlsmirror-opts"]; ok {
+			return nil, fmt.Errorf("%w: tlsmirror-opts", C.ErrRemovedProtocol)
+		}
+	}
 
 	opt := applyProxyOptions(options...)
 	basicOption := outbound.BasicOption{
