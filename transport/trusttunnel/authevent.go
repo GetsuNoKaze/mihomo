@@ -15,6 +15,11 @@ func (s *Service) verifyRequest(request *http.Request, authorization string) (us
 		reason := authevent.ReasonNoCredentials
 		if authorization != "" {
 			reason = authevent.ReasonWrongCredentials
+		} else if s.fallbackProxy != nil {
+			// With a fallback, a request without credentials is a visit to the
+			// cover site; reporting it would make every visitor look like a
+			// failed login to fail2ban-style consumers.
+			return
 		}
 		authevent.Emit(authevent.Event{
 			Protocol: "trusttunnel",
