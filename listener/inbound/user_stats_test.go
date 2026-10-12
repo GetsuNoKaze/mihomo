@@ -85,7 +85,7 @@ func TestInboundUserStats(t *testing.T) {
 	tunnel.UpdateProxies(map[string]C.Proxy{"DIRECT": adapter.NewProxy(outbound.NewDirect())}, nil)
 	tunnel.OnRunning()
 
-	const inboundName = "vless-user-stats"
+	inboundName := "vless-user-stats-" + utils.NewUUIDV4().String()
 	aliceUUID, bobUUID := utils.NewUUIDV4().String(), utils.NewUUIDV4().String()
 	in, err := inbound.NewVless(&inbound.VlessOption{
 		BaseOption: inbound.BaseOption{NameStr: inboundName, Listen: "127.0.0.1", Port: "0"},
