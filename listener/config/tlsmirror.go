@@ -1,39 +1,6 @@
 package config
 
-import (
-	"encoding/json"
-
-	"github.com/metacubex/mihomo/listener/reality"
-	"github.com/metacubex/mihomo/listener/sing"
-	"github.com/metacubex/mihomo/transport/tlsmirror"
-)
-
-type VmessUser struct {
-	Username string
-	UUID     string
-	AlterID  int
-}
-
-type VmessServer struct {
-	Enable          bool
-	Listen          string
-	Users           []VmessUser
-	WsPath          string
-	GrpcServiceName string
-	Certificate     string
-	PrivateKey      string
-	ClientAuthType  string
-	ClientAuthCert  string
-	EchKey          string
-	ShadowTLS       ShadowTLS       `yaml:"shadow-tls" json:"shadow-tls,omitempty"`
-	ResTLS          ResTLS          `yaml:"res-tls" json:"res-tls,omitempty"`
-	JLSConfig       JLSConfig       `yaml:"jls-config" json:"jls-config,omitempty"`
-	RealityConfig   reality.Config  `yaml:"reality-config" json:"reality-config,omitempty"`
-	TLSMirrorConfig TLSMirrorConfig `yaml:"tlsmirror-config" json:"tlsmirror-config,omitempty"`
-	MekyaConfig     MekyaConfig     `yaml:"mekya-config" json:"mekya-config,omitempty"`
-	MKCPConfig      MKCPConfig      `yaml:"mkcp-config" json:"mkcp-config,omitempty"`
-	MuxOption       sing.MuxOption  `yaml:"mux-option" json:"mux-option,omitempty"`
-}
+import "github.com/metacubex/mihomo/transport/tlsmirror"
 
 type TLSMirrorConfig struct {
 	PrimaryKey                    string                         `yaml:"primary-key" json:"primary-key,omitempty"`
@@ -81,9 +48,4 @@ func (p TLSMirrorTransportLayerPadding) Build() tlsmirror.TransportLayerPadding 
 	return tlsmirror.TransportLayerPadding{
 		Enabled: p.Enabled,
 	}
-}
-
-func (t VmessServer) String() string {
-	b, _ := json.Marshal(t)
-	return string(b)
 }

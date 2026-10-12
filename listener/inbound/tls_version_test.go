@@ -64,16 +64,6 @@ func TestInboundTLSMinVersion(t *testing.T) {
 			opts.NameStr = "trojan_tls_version"
 			return inbound.NewTrojan(&opts)
 		}},
-		{"vmess", func() (tlsTestInbound, error) {
-			opts := inbound.VmessOption{
-				BaseOption:  testBaseOption,
-				Users:       []inbound.VmessUser{{Username: "test", UUID: userUUID}},
-				Certificate: tlsCertificate,
-				PrivateKey:  tlsPrivateKey,
-			}
-			opts.NameStr = "vmess_tls_version"
-			return inbound.NewVmess(&opts)
-		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

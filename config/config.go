@@ -80,7 +80,6 @@ type Inbound struct {
 	Tun               LC.Tun         `json:"tun"`
 	TuicServer        LC.TuicServer  `json:"tuic-server"`
 	ShadowSocksConfig string         `json:"ss-config"`
-	VmessConfig       string         `json:"vmess-config"`
 	Authentication    []string       `json:"authentication"`
 	SkipAuthPrefixes  []netip.Prefix `json:"skip-auth-prefixes"`
 	LanAllowedIPs     []netip.Prefix `json:"lan-allowed-ips"`
@@ -792,7 +791,6 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 			TProxyPort:        cfg.TProxyPort,
 			MixedPort:         cfg.MixedPort,
 			ShadowSocksConfig: cfg.ShadowSocksConfig,
-			VmessConfig:       cfg.VmessConfig,
 			AllowLan:          cfg.AllowLan,
 			SkipAuthPrefixes:  cfg.SkipAuthPrefixes,
 			LanAllowedIPs:     cfg.LanAllowedIPs,

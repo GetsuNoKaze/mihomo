@@ -29,7 +29,6 @@ const (
 	SOCKS5
 	SHADOWSOCKS
 	SNELL
-	VMESS
 	VLESS
 	REDIR
 	TPROXY
@@ -96,8 +95,6 @@ func (t Type) String() string {
 		return "ShadowSocks"
 	case SNELL:
 		return "Snell"
-	case VMESS:
-		return "Vmess"
 	case VLESS:
 		return "Vless"
 	case REDIR:
@@ -146,8 +143,6 @@ func ParseType(t string) (*Type, error) {
 		res = SHADOWSOCKS
 	case "SNELL":
 		res = SNELL
-	case "VMESS":
-		res = VMESS
 	case "VLESS":
 		res = VLESS
 	case "REDIR":
