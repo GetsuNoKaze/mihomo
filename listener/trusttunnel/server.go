@@ -30,6 +30,9 @@ type Listener struct {
 }
 
 func New(config LC.TrustTunnelServer, lc C.InboundListenConfig, tunnel C.Tunnel, additions ...inbound.Addition) (sl *Listener, err error) {
+	if err := trusttunnel.ValidateFallback(config.Fallback); err != nil {
+		return nil, err
+	}
 	if len(additions) == 0 {
 		additions = []inbound.Addition{
 			inbound.WithInName("DEFAULT-TRUSTTUNNEL"),
