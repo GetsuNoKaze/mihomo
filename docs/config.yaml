@@ -103,6 +103,23 @@ external-controller-routing-mark: 0
 # without the inbound protocol overhead. Query: GET /traffic/users
 # user-stats: true
 
+# 按入站用户限制：速度、并发连接数、在线 IP 数、流量配额、到期时间。
+# user: "*" 为该入站所有未单独配置用户的默认限制。0 或不写表示不限制。
+# 速度单位为字节/秒：10M = 10 MB/s；小写 b 表示比特：80Mbps = 10 MB/s。
+# 大小单位：K/M/G/T 为 1000 的幂，Ki/Mi/Gi/Ti 为 1024 的幂。
+# 运行时可通过 /limits/users 修改；重新加载配置会替换 API 设置的限制，配额用量保留。
+# Per-user limits of inbound users: speed, concurrent connections, online
+# addresses, traffic quota, expiry. user: "*" is the default of every user of
+# the inbound without a limit of its own. 0 or absent is no limit.
+# speed-up/speed-down are bytes per second: 10M = 10 MB/s; a lowercase b means
+# bits: 80Mbps = 10 MB/s. Sizes: K/M/G/T are powers of 1000, Ki/Mi/Gi/Ti of 1024.
+# quota counts upload plus download; expire-at is unix seconds or RFC 3339.
+# Runtime API: GET/PUT/DELETE /limits/users, POST /limits/users/reset-quota.
+# A reload replaces the limits set through the API; the quota usage is kept.
+# user-limits:
+#   - { inbound: vless-in, user: alice, speed-up: 10M, speed-down: 80Mbps, max-conns: 64, max-ips: 3, quota: 100G, expire-at: 1767225600 }
+#   - { inbound: vless-in, user: "*", speed-down: 20M, max-ips: 2, quota: 50G }
+
 # TCP 出站连接建立总期限（毫秒），包含代理握手及重试，默认 5000，取值范围 100-600000。
 # 仅影响新连接，不影响已建立连接的读写、UDP 或健康检查。
 # 代理适配器内部更短的独立超时仍可能先到期。

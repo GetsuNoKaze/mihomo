@@ -12,6 +12,7 @@ The core counts the traffic of every inbound user: the pair of the inbound name 
 - `conns` is the number of the user's open TCP connections and UDP sessions.
 - `ips` lists the addresses the user is connected from, with the number of connections from each and the time of the last connect or disconnect. An address stays listed for a minute after its last connection closes.
 - `lastActive` is the last seen activity (a connection opened or closed, bytes moved by the time of a query); it is accurate to a minute.
+- `rejected` and `rejectReasons` are the connections refused by the [user's limits](/Citrus/en/start/user-limits/), in total and by reason (`expired`, `quota`, `max-conns`, `max-ips`).
 
 The counters live in memory and start over when the core restarts.
 
@@ -50,7 +51,9 @@ curl -H "Authorization: Bearer $SECRET" "http://127.0.0.1:9090/traffic/users?inb
     "down": 52428800,
     "conns": 3,
     "ips": [{ "ip": "203.0.113.7", "conns": 3, "lastSeen": "2026-10-12T20:01:02Z" }],
-    "lastActive": "2026-10-12T20:01:02Z"
+    "lastActive": "2026-10-12T20:01:02Z",
+    "rejected": 2,
+    "rejectReasons": { "max-ips": 2 }
   }
 ]
 ```
@@ -59,7 +62,7 @@ A panel that collects traffic every N seconds calls it with `reset=true` and add
 
 ### `DELETE /connections?inbound=…&user=…`
 
-Closes the connections of a user (or of a whole inbound when only `inbound` is given). Without parameters it closes all connections, as before. To keep a user from connecting again, remove the user from the config.
+Closes the connections of a user (or of a whole inbound when only `inbound` is given). Without parameters it closes all connections, as before. To keep a user from connecting again, remove the user from the config or give it an `expire-at` in the past (see [user limits](/Citrus/en/start/user-limits/)).
 
 ## Go API
 
