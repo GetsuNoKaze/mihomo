@@ -82,6 +82,14 @@ type Service struct {
 	fallbackCancel context.CancelFunc
 }
 
+// handshakeTimeout bounds the TLS handshake of a TCP connection and, for
+// HTTP/1, the request header, so that a client that connects and sends
+// nothing (or trickles bytes) does not hold the conn before authentication.
+// HTTP/2 conns without streams are closed by IdleTimeout. It matches the
+// VLESS and Trojan listeners; Go's server clears it once the header is read.
+// A variable only so that tests can shorten it.
+var handshakeTimeout = 15 * time.Second
+
 const (
 	// fallbackIdleTimeout bounds how long a fallback request may go without any
 	// body bytes moving in either direction, like nginx's proxy_read_timeout.
@@ -302,6 +310,10 @@ func (s *Service) Start(tcpListener net.Listener, udpConn net.PacketConn, tlsCon
 		s.httpServer = &http.Server{
 			Handler:     s,
 			IdleTimeout: DefaultSessionTimeout,
+			// a client that connects and sends nothing (or trickles a header)
+			// must not hold the conn before it is authenticated; this also
+			// bounds the TLS handshake. Cleared once the header is read.
+			ReadHeaderTimeout: handshakeTimeout,
 			BaseContext: func(net.Listener) context.Context {
 				return s.ctx
 			},
