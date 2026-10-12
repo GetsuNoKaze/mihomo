@@ -8,6 +8,7 @@ import (
 	N "github.com/metacubex/mihomo/common/net"
 	"github.com/metacubex/mihomo/common/sockopt"
 	C "github.com/metacubex/mihomo/constant"
+	authStore "github.com/metacubex/mihomo/listener/auth"
 	LC "github.com/metacubex/mihomo/listener/config"
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/transport/socks5"
@@ -40,7 +41,9 @@ func NewUDP(addr string, tunnel C.Tunnel, additions ...inbound.Addition) (*UDPLi
 }
 
 func NewUDPWithConfig(config LC.AuthServer, lc C.InboundListenConfig, tunnel C.Tunnel, additions ...inbound.Addition) (*UDPListener, error) {
+	isDefault := false
 	if len(additions) == 0 {
+		isDefault = true
 		additions = []inbound.Addition{
 			inbound.WithInName("DEFAULT-SOCKS"),
 			inbound.WithSpecialRules(""),
@@ -59,6 +62,23 @@ func NewUDPWithConfig(config LC.AuthServer, lc C.InboundListenConfig, tunnel C.T
 		packetConn: l,
 		addr:       config.Listen,
 	}
+	store := config.AuthStore
+	if store == nil {
+		store = authStore.Nil
+	}
+	// The same source checks as the TCP listener: the LAN allow/deny lists on the
+	// default listeners, and authentication through an open UDP ASSOCIATE.
+	accept := func(remoteAddr net.Addr) bool {
+		applyDefault := isDefault || store == authStore.Default
+		if applyDefault && !inbound.IsRemoteAddrDisAllowed(remoteAddr) {
+			return false
+		}
+		if store.Authenticator() == nil || (applyDefault && inbound.SkipAuthRemoteAddr(remoteAddr)) {
+			return true
+		}
+		return hasAssociation(l.LocalAddr(), remoteAddr)
+	}
+
 	conn := N.NewEnhancePacketConn(l)
 	go func() {
 		for {
@@ -69,6 +89,12 @@ func NewUDPWithConfig(config LC.AuthServer, lc C.InboundListenConfig, tunnel C.T
 				}
 				if sl.closed {
 					break
+				}
+				continue
+			}
+			if !accept(remoteAddr) {
+				if put != nil {
+					put()
 				}
 				continue
 			}
