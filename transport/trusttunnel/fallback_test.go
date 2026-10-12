@@ -404,14 +404,27 @@ func TestFallbackClientStopsReading(t *testing.T) {
 // so another port is tried then.
 func listenTCPAndUDP(t *testing.T) (net.Listener, net.PacketConn) {
 	t.Helper()
+	// Free TCP ports come out sequentially, so a run of them can all fall inside
+	// one excluded UDP range; take a free UDP port first and open TCP on it, and
+	// only fall back to the other order.
 	var err error
 	for i := 0; i < 20; i++ {
+		var udpConn net.PacketConn
+		udpConn, err = net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
 		var tcpListener net.Listener
+		tcpListener, err = net.Listen("tcp", udpConn.LocalAddr().String())
+		if err == nil {
+			return tcpListener, udpConn
+		}
+		_ = udpConn.Close()
+
 		tcpListener, err = net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
 		}
-		var udpConn net.PacketConn
 		udpConn, err = net.ListenPacket("udp", tcpListener.Addr().String())
 		if err == nil {
 			return tcpListener, udpConn
