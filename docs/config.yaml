@@ -265,6 +265,20 @@ tunnels: # one line config
 # DNS 配置
 dns:
   cache-algorithm: arc
+  # 是否允许返回过期缓存，默认 true（与原有行为相同：立即返回过期记录并在后台刷新，不限制过期时长）
+  # Serve expired cache entries (like unbound serve-expired, RFC 8767). Default true with
+  # ttl 0 and client timeout 0, which is the resolver's existing behaviour: an expired entry
+  # is answered at once with TTL 1 and refreshed in the background, with no age limit.
+  # RFC 8767 style, e.g.: serve-expired-ttl: 86400, serve-expired-client-timeout: 1800
+  # (wait up to 1.8 s for a fresh answer, serve stale only on timeout or upstream failure).
+  # serve-expired: false never answers stale: an expired entry is resolved before answering.
+  serve-expired: true
+  # 过期缓存的最大可复用时间，单位：秒；默认 0（不限制），最大 2592000
+  # How long after expiry an entry may still be served, seconds. Default 0 = no limit, max 2592000 (30 days).
+  serve-expired-ttl: 0
+  # 返回过期缓存前等待上游解析的时间，单位：毫秒；默认 0（立即返回），最大 5000
+  # How long to wait for the upstream before answering stale, milliseconds. Default 0 = answer at once, max 5000.
+  serve-expired-client-timeout: 0
   enable: false # 关闭将使用系统 DNS
   prefer-h3: false # 是否开启 DoH 支持 HTTP/3，将并发尝试
   listen: 0.0.0.0:53 # 开启 DNS 服务器监听
