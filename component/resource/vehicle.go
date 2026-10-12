@@ -3,7 +3,7 @@ package resource
 import (
 	"context"
 	"errors"
-	"io"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -18,6 +18,14 @@ import (
 
 const (
 	DefaultHttpTimeout = time.Second * 20
+
+	// DefaultSizeLimit caps an HTTP provider download when the provider sets no
+	// size-limit (0). Proxy providers are usually kilobytes and the largest
+	// public text/yaml rule lists are a few tens of MiB, so 64 MiB leaves ample
+	// headroom while keeping a misbehaving or hostile server from making the
+	// core buffer an endless body in memory. A provider can raise it with an
+	// explicit size-limit, or opt out entirely with size-limit: -1.
+	DefaultSizeLimit int64 = 64 << 20
 
 	fileMode os.FileMode = 0o600
 	dirMode  os.FileMode = 0o700
@@ -153,12 +161,10 @@ func (h *HTTPVehicle) Read(ctx context.Context, oldHash utils.HashType) (buf []b
 		err = errors.New(resp.Status)
 		return
 	}
-	var reader io.Reader = resp.Body
-	if h.sizeLimit > 0 {
-		reader = io.LimitReader(reader, h.sizeLimit)
-	}
-	buf, err = io.ReadAll(reader)
+	buf, err = utils.ReadAllLimit(resp.Body, h.effectiveSizeLimit())
 	if err != nil {
+		buf = nil
+		err = fmt.Errorf("response %w", err)
 		return
 	}
 	hash = utils.MakeHash(buf)
@@ -172,6 +178,20 @@ func (h *HTTPVehicle) Read(ctx context.Context, oldHash utils.HashType) (buf []b
 	return
 }
 
+// effectiveSizeLimit maps the configured size-limit onto the cap used for a
+// download: a positive value is used as is, 0 selects DefaultSizeLimit and a
+// negative value disables the cap.
+func (h *HTTPVehicle) effectiveSizeLimit() int64 {
+	if h.sizeLimit == 0 {
+		return DefaultSizeLimit
+	}
+	return h.sizeLimit
+}
+
+// NewHTTPVehicle creates a vehicle that downloads url. sizeLimit caps the
+// response body: a positive value is the cap in bytes, 0 uses
+// DefaultSizeLimit and a negative value means no cap. A larger body is an
+// error, never silently truncated.
 func NewHTTPVehicle(url string, path string, proxy string, header http.Header, timeout time.Duration, sizeLimit int64) *HTTPVehicle {
 	return &HTTPVehicle{
 		url:       url,

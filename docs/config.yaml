@@ -1753,7 +1753,7 @@ proxy-providers:
     interval: 3600
     path: ./provider1.yaml # 默认只允许存储在 citrus 的 Home Dir，如果想存储到其他位置，请通过设置 SAFE_PATHS 环境变量指定额外的安全路径。该环境变量的语法同本操作系统的PATH环境变量解析规则（即Windows下以分号分割，其他系统下以冒号分割）
     proxy: DIRECT
-    # size-limit: 10240 # 限制下载文件最大为10kb，默认为0即不限制文件大小
+    # size-limit: 10240 # 限制下载文件最大为10kb，超出则本次更新失败（不会截断）；默认为0即使用 64MiB 上限，-1 为不限制
     # #
     # # 如果设置会age-secret-key尝试通过此secret解密age armor格式加密的配置文件
     # #
@@ -1879,7 +1879,7 @@ rule-providers:
     type: http # http 的 path 可空置，默认储存路径为 homedir 的 rules 文件夹，文件名为 url 的 md5
     url: "url"
     proxy: DIRECT
-    # size-limit: 10240 # 限制下载文件最大为10kb，默认为0即不限制文件大小
+    # size-limit: 10240 # 限制下载文件最大为10kb，超出则本次更新失败（不会截断）；默认为0即使用 64MiB 上限，-1 为不限制
   rule2:
     behavior: classical
     interval: 259200
