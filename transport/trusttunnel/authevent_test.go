@@ -75,3 +75,48 @@ func TestServeHTTPEmitsAuthEvent(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 }
+
+// With a fallback, requests without credentials are cover-site visits and are
+// not reported; wrong credentials still are.
+func TestServeHTTPAuthEventWithFallback(t *testing.T) {
+	events := make(chan authevent.Event, 4)
+	authevent.SetHandler(func(e authevent.Event) { events <- e })
+	t.Cleanup(func() { authevent.SetHandler(nil) })
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("cover"))
+	}))
+	t.Cleanup(backend.Close)
+	service := newFallbackService(t, backend)
+	service.UpdateUsers(map[string]string{"user": "secret"})
+
+	serve := func(method, authorization string) int {
+		request := httptest.NewRequest(method, "https://example.com/", nil)
+		request.RemoteAddr = "192.0.2.1:50000"
+		if authorization != "" {
+			request.Header.Set("Proxy-Authorization", authorization)
+		}
+		recorder := httptest.NewRecorder()
+		service.ServeHTTP(recorder, request)
+		return recorder.Code
+	}
+
+	if code := serve(http.MethodGet, ""); code != http.StatusOK {
+		t.Fatalf("cover page: status %d", code)
+	}
+	select {
+	case e := <-events:
+		t.Fatalf("cover-site visit reported: %+v", e)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	serve(http.MethodGet, "Basic "+base64.StdEncoding.EncodeToString([]byte("user:wrong")))
+	select {
+	case e := <-events:
+		if e.Reason != authevent.ReasonWrongCredentials {
+			t.Fatalf("got %+v, want wrong_credentials", e)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("wrong credentials not reported")
+	}
+}
