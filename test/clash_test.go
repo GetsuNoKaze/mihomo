@@ -30,8 +30,7 @@ import (
 const (
 	ImageShadowsocks     = "mritd/shadowsocks:latest"
 	ImageShadowsocksRust = "ghcr.io/shadowsocks/ssserver-rust:latest"
-	ImageVmess           = "v2fly/v2fly-core:v4.45.2"
-	ImageVmessLatest     = "sagernet/v2fly-core:latest"
+	ImageV2fly           = "v2fly/v2fly-core:v4.45.2"
 	ImageVless           = "teddysun/xray:latest"
 	ImageTrojan          = "trojangfw/trojan:latest"
 	ImageTrojanGo        = "p4gefau1t/trojan-go:latest"
@@ -98,7 +97,7 @@ func init() {
 	images := []string{
 		ImageShadowsocks,
 		ImageShadowsocksRust,
-		ImageVmess,
+		ImageV2fly,
 		ImageVless,
 		ImageTrojan,
 		ImageTrojanGo,
