@@ -11,7 +11,6 @@ import (
 	"github.com/metacubex/mihomo/transport/jls"
 	"github.com/metacubex/mihomo/transport/restls"
 	"github.com/metacubex/mihomo/transport/shadowtls"
-	"github.com/metacubex/mihomo/transport/tlsmirror"
 
 	"github.com/metacubex/tls"
 )
@@ -30,8 +29,6 @@ type TLSConfig struct {
 	Restls            *restls.Config
 	JLS               *jls.Config
 	Reality           *tlsC.RealityConfig
-	TLSMirror         *tlsmirror.Config
-	TLSMirrorDialer   tlsmirror.EnrollmentDialer
 }
 
 func (cfg *TLSConfig) ToStdConfig() (*tls.Config, error) {
@@ -87,22 +84,6 @@ func StreamTLSConn(ctx context.Context, conn net.Conn, cfg *TLSConfig) (net.Conn
 			ServerName:        cfg.Host,
 			ALPN:              cfg.NextProtos,
 			ClientFingerprint: cfg.ClientFingerprint,
-		})
-	}
-	if cfg.TLSMirror != nil {
-		return tlsmirror.Dial(ctx, conn, tlsmirror.ClientConfig{
-			Config:             *cfg.TLSMirror,
-			ServerName:         cfg.Host,
-			SkipCertVerify:     cfg.SkipCertVerify,
-			NameCertVerify:     cfg.NameCertVerify,
-			ALPN:               cfg.NextProtos,
-			Fingerprint:        cfg.FingerPrint,
-			Certificate:        cfg.Certificate,
-			PrivateKey:         cfg.PrivateKey,
-			ClientFingerprint:  cfg.ClientFingerprint,
-			ForwardAddressHint: cfg.Host,
-			ECH:                cfg.ECH,
-			EnrollmentDialer:   cfg.TLSMirrorDialer,
 		})
 	}
 
