@@ -7,6 +7,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter"
 	. "github.com/metacubex/mihomo/common/convert"
+	_ "github.com/metacubex/mihomo/config" // dns.ParseNameServer for ech-opts query-server
 
 	"github.com/metacubex/mldsa"
 	"github.com/stretchr/testify/assert"
@@ -47,9 +48,14 @@ func TestConvertsV2RayXrayECHParam(t *testing.T) {
 	}{
 		{"base64", url.QueryEscape(testECHConfig), map[string]any{"enable": true, "config": testECHConfig}},
 		{"base64 with unescaped plus", testECHConfig, map[string]any{"enable": true, "config": testECHConfig}},
-		{"doh", url.QueryEscape("https://1.1.1.1/dns-query"), map[string]any{"enable": true}},
-		{"domain and doh", url.QueryEscape("ech.example.com+https://1.1.1.1/dns-query"), map[string]any{"enable": true, "query-server-name": "ech.example.com"}},
-		{"domain and doh with unescaped plus", "ech.example.com+https://1.1.1.1/dns-query", map[string]any{"enable": true, "query-server-name": "ech.example.com"}},
+		{"doh", url.QueryEscape("https://1.1.1.1/dns-query"), map[string]any{"enable": true, "query-server": "https://1.1.1.1/dns-query"}},
+		{"domain and doh", url.QueryEscape("ech.example.com+https://1.1.1.1/dns-query"), map[string]any{"enable": true, "query-server-name": "ech.example.com", "query-server": "https://1.1.1.1/dns-query"}},
+		{"domain and doh with unescaped plus", "ech.example.com+https://1.1.1.1/dns-query", map[string]any{"enable": true, "query-server-name": "ech.example.com", "query-server": "https://1.1.1.1/dns-query"}},
+		{"udp", url.QueryEscape("udp://8.8.8.8"), map[string]any{"enable": true, "query-server": "udp://8.8.8.8"}},
+		{"domain and udp with port", url.QueryEscape("ech.example.com+udp://8.8.8.8:53"), map[string]any{"enable": true, "query-server-name": "ech.example.com", "query-server": "udp://8.8.8.8:53"}},
+		{"h2c", url.QueryEscape("h2c://dns.google/dns-query"), map[string]any{"enable": true, "query-server": "https://dns.google/dns-query"}},
+		{"domain and h2c", url.QueryEscape("ech.example.com+h2c://dns.google/dns-query"), map[string]any{"enable": true, "query-server-name": "ech.example.com", "query-server": "https://dns.google/dns-query"}},
+		{"empty domain and doh", url.QueryEscape("+https://1.1.1.1/dns-query"), map[string]any{"enable": true, "query-server": "https://1.1.1.1/dns-query"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			uri := "vless://b831381d-6324-4d53-ad4f-8cda48b30811@example.com:443?security=tls&type=tcp&ech=" + tt.ech

@@ -58,6 +58,10 @@ tls:
   #   madSJjYQIf9o1N5GXjkW4DEEeb17qMxHdwMdNnwADAABAAEAAQACAAEAAwAIdGVz
   #   dC5jb20AAA==
   #   -----END ECH KEYS-----
+  # ech-key 也可以是文件路径；所有监听器的 ech-key 都同时支持以下格式：
+  #   - PEM "ECH KEYS"（citrus generate ech-keypair 或 xray tls ech --pem 的输出，"ECH CONFIGS" 块会被忽略）
+  #   - Xray echServerKeys：xray tls ech 输出的 "ECH server keys" 纯 base64 字符串，可包含多个密钥
+  # ech-key: ACCv2ZuDnZS3qB89E6yLxedT/nYcEtpvUV6kapSPRtfiQgBe/g0AWgAAIAAgOuQ6bS+UBDB93NEEKlQadK0Ob1a+yiIDj/ZOIhJXTDoAJAABAAEAAQACAAEAAwACAAEAAgACAAIAAwADAAEAAwACAAMAAwALZXhhbXBsZS5jb20AAA==
   custom-certifactes:
     - |
       -----BEGIN CERTIFICATE-----
@@ -731,6 +735,13 @@ proxies: # socks5
     #   # 如果config为空则通过dns解析，不为空则通过该值指定，格式为经过base64编码的ech参数（dig +short TYPE65 tls-ech.dev）
     #   config: AEn+DQBFKwAgACABWIHUGj4u+PIggYXcR5JF0gYk3dCRioBW8uJq9H4mKAAIAAEAAQABAANAEnB1YmxpYy50bHMtZWNoLmRldgAA
     #   # query-server-name: xxx.com # 可选项，不为空时用于指定通过dns解析时的域名
+    #   # query-server: https://1.1.1.1/dns-query # 可选项，不为空时通过该 DNS 服务器（nameserver 语法：udp://、tcp://、tls://、https://、quic://，可加 #代理名）
+    #   #   查询 HTTPS 记录获取 ech 参数，而不是 proxy-server-nameserver/默认解析器；每个代理单独缓存，遵循记录 TTL
+    #   # config 也可以是 xray tls ech --pem 输出的 "ECH CONFIGS" PEM 块
+    #   # 分享链接中的 Xray echConfigList（ech=）对应关系：
+    #   #   ech=<base64>                                   -> config
+    #   #   ech=https://1.1.1.1/dns-query 或 udp://8.8.8.8 -> query-server（h2c:// 视为 https://）
+    #   #   ech=xxx.com+https://1.1.1.1/dns-query          -> query-server-name: xxx.com + query-server
     # shadow-tls-opts: # 需要 tls: true；使用 servername 作为 ShadowTLS SNI
     #   version: 3 # 支持 v1/v2/v3；留空时默认为 v2
     #   password: shadow-tls-password
