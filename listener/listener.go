@@ -41,6 +41,7 @@ var (
 	tunnelTCPListeners  = map[string]*LT.Listener{}
 	tunnelUDPListeners  = map[string]*LT.PacketConn{}
 	inboundListeners    = map[string]C.InboundListener{}
+	runtimeUsers        = map[string]struct{}{} // listeners whose users changed at runtime
 	tunLister           *sing_tun.Listener
 	shadowSocksListener C.MultiAddrListener
 	tuicListener        *tuic.Listener
@@ -574,11 +575,11 @@ func PatchInboundListeners(newListenerMap map[string]C.InboundListener, tunnel C
 
 	for name, newListener := range newListenerMap {
 		if oldListener, ok := inboundListeners[name]; ok {
-			if !oldListener.Config().Equal(newListener.Config()) {
-				_ = oldListener.Close()
-			} else {
+			if updateUsersInPlace(name, oldListener, newListener) {
 				continue
 			}
+			_ = oldListener.Close()
+			delete(runtimeUsers, name)
 		}
 		if err := newListener.Listen(tunnel); err != nil {
 			log.Errorln("Listener %s listen err: %s", name, err.Error())
@@ -592,9 +593,38 @@ func PatchInboundListeners(newListenerMap map[string]C.InboundListener, tunnel C
 			if _, ok := newListenerMap[name]; !ok {
 				_ = oldListener.Close()
 				delete(inboundListeners, name)
+				delete(runtimeUsers, name)
 			}
 		}
 	}
+}
+
+// updateUsersInPlace reports whether oldListener can stay for newListener:
+// when their configurations are equal, or differ only in the users and
+// oldListener takes the users of the new configuration in place. The users
+// changed at runtime are replaced by those of the configuration as well.
+// When it reports false, oldListener must be closed and newListener started.
+func updateUsersInPlace(name string, oldListener, newListener C.InboundListener) bool {
+	equal := oldListener.Config().Equal(newListener.Config())
+	_, touched := runtimeUsers[name]
+	oldUpdater, ok := oldListener.(C.InboundUserUpdater)
+	if !ok || (equal && !touched) {
+		return equal
+	}
+	newUpdater, ok := newListener.(C.InboundUserUpdater)
+	if !ok || !(equal || oldUpdater.SameExceptUsers(newListener.Config())) {
+		return false
+	}
+	users := newUpdater.Users() // the users of the configuration: it does not listen
+	if !sameUsers(oldUpdater.Users(), users) {
+		if err := oldUpdater.SetUsers(users); err != nil {
+			log.Warnln("Listener %s: cannot set the users in place, recreating it: %s", name, err)
+			return false
+		}
+		log.Infoln("Listener %s: users updated in place", name)
+	}
+	delete(runtimeUsers, name)
+	return true
 }
 
 // GetPorts return the ports of proxy servers

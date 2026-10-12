@@ -173,6 +173,12 @@ func HandleSocks4(conn net.Conn, tunnel C.Tunnel, store auth.AuthStore, addition
 		conn.Close()
 		return
 	}
+	release, ok := auth.BindSession(authenticator, user, conn)
+	if !ok {
+		conn.Close()
+		return
+	}
+	defer release()
 	additions = append(additions, inbound.WithInUser(user))
 	tunnel.HandleTCPConn(inbound.NewSocket(socks5.ParseAddr(addr), conn, C.SOCKS4, additions...))
 }
@@ -184,6 +190,13 @@ func HandleSocks5(conn net.Conn, tunnel C.Tunnel, store auth.AuthStore, addition
 		conn.Close()
 		return
 	}
+	// the session dies with the user when its users can change at runtime
+	release, ok := auth.BindSession(authenticator, user, conn)
+	if !ok {
+		conn.Close()
+		return
+	}
+	defer release()
 	if command == socks5.CmdUDPAssociate {
 		// The association lives as long as this control connection (RFC 1928 §7);
 		// the UDP listener only relays for clients that hold one when auth is on.

@@ -17,6 +17,7 @@ import (
 	"github.com/metacubex/mihomo/component/ech"
 	C "github.com/metacubex/mihomo/constant"
 	LC "github.com/metacubex/mihomo/listener/config"
+	"github.com/metacubex/mihomo/listener/inbounduser"
 	"github.com/metacubex/mihomo/listener/jls"
 	"github.com/metacubex/mihomo/listener/reality"
 	"github.com/metacubex/mihomo/listener/restls"
@@ -40,7 +41,7 @@ type Listener struct {
 	closed     bool
 	config     LC.TrojanServer
 	listeners  []net.Listener
-	keys       map[[trojan.KeyLength]byte]string
+	users      *inbounduser.Set[[trojan.KeyLength]byte]
 	pickCipher core.Cipher
 	handler    *sing.ListenerHandler
 	realIP     httputils.RealIP
@@ -63,10 +64,9 @@ func New(config LC.TrojanServer, lc C.InboundListenConfig, tunnel C.Tunnel, addi
 		return nil, err
 	}
 
-	keys := make(map[[trojan.KeyLength]byte]string)
-	for _, user := range config.Users {
-		keys[trojan.Key(user.Password)] = user.Username
-	}
+	users, _ := inbounduser.New(userKey, utils.Map(config.Users, func(it LC.TrojanUser) C.InboundUser {
+		return C.InboundUser{Name: it.Username, Secret: it.Password}
+	})) // userKey never fails
 
 	var pickCipher core.Cipher
 	if config.TrojanSSOption.Enabled {
@@ -89,7 +89,7 @@ func New(config LC.TrojanServer, lc C.InboundListenConfig, tunnel C.Tunnel, addi
 		log.Warnln("[Trojan] %s: trusted-proxy-header %q is ignored until trusted-proxies lists the reverse proxies", config.Listen, realIP.Header)
 	}
 
-	sl = &Listener{false, config, nil, keys, pickCipher, h, realIP}
+	sl = &Listener{false, config, nil, users, pickCipher, h, realIP}
 
 	httpServer := http.Server{
 		IdleTimeout: 30 * time.Second,
@@ -278,6 +278,23 @@ func (l *Listener) AddrList() (addrList []net.Addr) {
 	return
 }
 
+// userKey maps a user to its trojan key (the hex SHA-224 of the password).
+func userKey(user C.InboundUser) ([trojan.KeyLength]byte, error) {
+	return trojan.Key(user.Secret), nil
+}
+
+// Users returns the current users (Name = username, Secret = password).
+func (l *Listener) Users() []C.InboundUser { return l.users.Users() }
+
+// ReplaceUsers swaps the users without closing the listener; the sessions
+// of the removed and changed users are closed.
+func (l *Listener) ReplaceUsers(users []C.InboundUser) (inbounduser.Change, error) {
+	if err := inbounduser.NoFlow("trojan", users); err != nil {
+		return inbounduser.Change{}, err
+	}
+	return l.users.Replace(users)
+}
+
 func (l *Listener) HandleHTTPConn(r *http.Request, conn net.Conn, tunnel C.Tunnel, additions ...inbound.Addition) {
 	if ap := l.realIP.ClientAddrPort(r); ap.IsValid() {
 		additions = append(slices.Clip(additions), inbound.WithSrcAddrPort(ap))
@@ -308,8 +325,14 @@ func (l *Listener) serveConn(conn net.Conn, client net.Addr, tunnel C.Tunnel, ad
 		return
 	}
 
-	if user, ok := l.keys[key]; ok {
-		additions = append(additions, inbound.WithInUser(user))
+	if entry, ok := l.users.Lookup(key); ok {
+		// the session dies with the user: removing or re-keying it closes conn
+		release, bound := l.users.Bind(entry, conn)
+		if !bound {
+			return
+		}
+		defer release()
+		additions = append(additions, inbound.WithInUser(entry.Name()))
 	} else {
 		//log.Warnln("no such key")
 		if client == nil {

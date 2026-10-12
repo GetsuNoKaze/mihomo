@@ -843,8 +843,8 @@ func TestVerifyUnknownUser(t *testing.T) {
 		return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password))
 	}
 	for user, password := range map[string]string{"alice": "secret", "empty": "", "unicode": "風" + strings.Repeat("x", 1000)} {
-		if got, ok := s.verify(basic(user, password)); !ok || got != user {
-			t.Fatalf("correct credentials for %q refused: user=%q, ok=%v", user, got, ok)
+		if got, ok := s.verify(basic(user, password)); !ok || got.Name() != user {
+			t.Fatalf("correct credentials for %q refused: entry=%v, ok=%v", user, got, ok)
 		}
 	}
 	for _, auth := range []string{basic("alice", "wrong"), basic("bob", "secret"), basic("bob", ""), basic("", ""), ""} {

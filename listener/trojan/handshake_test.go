@@ -10,6 +10,7 @@ import (
 	"time"
 
 	C "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/listener/inbounduser"
 	"github.com/metacubex/mihomo/listener/sing"
 	"github.com/metacubex/mihomo/transport/socks5"
 	"github.com/metacubex/mihomo/transport/trojan"
@@ -53,7 +54,7 @@ func serveTrojanOnce(t *testing.T, idle time.Duration) net.Conn {
 		t.Fatal(err)
 	}
 	l := &Listener{
-		keys:    map[[trojan.KeyLength]byte]string{trojan.Key(testPassword): "test"},
+		users:   testUsers(),
 		handler: h,
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -135,4 +136,9 @@ func TestTrojanHandshakeDeadlineClearedAfterHeader(t *testing.T) {
 	if string(resp) != "hello" {
 		t.Fatalf("unexpected response %q", resp)
 	}
+}
+
+func testUsers() *inbounduser.Set[[trojan.KeyLength]byte] {
+	users, _ := inbounduser.New(userKey, []C.InboundUser{{Name: "test", Secret: testPassword}})
+	return users
 }
