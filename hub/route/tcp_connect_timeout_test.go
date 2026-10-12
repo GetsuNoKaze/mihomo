@@ -2,12 +2,12 @@ package route
 
 import (
 	"encoding/json"
-	"github.com/metacubex/http"
-	"github.com/metacubex/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/metacubex/chi"
+	"github.com/metacubex/http"
+	"github.com/metacubex/http/httptest"
 	"github.com/metacubex/mihomo/hub/executor"
 	"github.com/metacubex/mihomo/tunnel"
 )
@@ -21,6 +21,8 @@ func TestPatchTCPConnectTimeout(t *testing.T) {
 	for _, body := range []string{
 		`{"tcp-connect-timeout":0}`,
 		`{"tcp-connect-timeout":-1}`,
+		`{"tcp-connect-timeout":15}`,
+		`{"tcp-connect-timeout":600001}`,
 		`{"tcp-connect-timeout":9223372036854775807}`,
 		`{"tcp-connect-timeout":1.5}`,
 	} {

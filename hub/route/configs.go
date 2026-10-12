@@ -339,7 +339,7 @@ func patchConfigs(w http.ResponseWriter, r *http.Request) {
 	if general.TCPConnectTimeout != nil {
 		if err := tunnel.SetTCPConnectTimeout(*general.TCPConnectTimeout); err != nil {
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, ErrBadRequest)
+			render.JSON(w, r, newError(err.Error()))
 			return
 		}
 	}

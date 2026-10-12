@@ -36,6 +36,26 @@ func TestParseGeneralTCPConnectTimeout(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "below minimum",
+			timeout: 99,
+			wantErr: true,
+		},
+		{
+			name:    "minimum",
+			timeout: 100,
+			want:    100,
+		},
+		{
+			name:    "maximum",
+			timeout: 600000,
+			want:    600000,
+		},
+		{
+			name:    "above maximum",
+			timeout: 600001,
+			wantErr: true,
+		},
+		{
 			name:    "duration overflow",
 			timeout: maxInt64,
 			wantErr: true,
@@ -77,6 +97,11 @@ func TestUnmarshalRawConfigTCPConnectTimeout(t *testing.T) {
 			name: "custom value",
 			yaml: "tcp-connect-timeout: 15000\n",
 			want: 15000,
+		},
+		{
+			name:    "seconds instead of milliseconds is rejected",
+			yaml:    "tcp-connect-timeout: 15\n",
+			wantErr: true,
 		},
 		{
 			name:    "explicit zero is rejected",

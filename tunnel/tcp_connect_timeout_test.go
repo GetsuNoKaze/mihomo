@@ -13,7 +13,12 @@ import (
 func TestTCPConnectTimeoutValidation(t *testing.T) {
 	old := TCPConnectTimeout().Milliseconds()
 	t.Cleanup(func() { _ = SetTCPConnectTimeout(old) })
-	for _, value := range []int64{0, -1, math.MaxInt64} {
+	for _, value := range []int64{MinTCPConnectTimeout, MaxTCPConnectTimeout} {
+		if err := ValidateTCPConnectTimeout(value); err != nil {
+			t.Fatalf("rejected boundary timeout %d: %v", value, err)
+		}
+	}
+	for _, value := range []int64{0, -1, MinTCPConnectTimeout - 1, MaxTCPConnectTimeout + 1, math.MaxInt64} {
 		if err := SetTCPConnectTimeout(value); err == nil {
 			t.Fatalf("accepted invalid timeout %d", value)
 		}
@@ -29,7 +34,9 @@ func TestTCPConnectContext(t *testing.T) {
 	if TCPConnectTimeout() != C.DefaultTCPTimeout {
 		t.Fatal("default must preserve the existing TCP budget")
 	}
-	_ = SetTCPConnectTimeout(15000)
+	if err := SetTCPConnectTimeout(15000); err != nil {
+		t.Fatal(err)
+	}
 	start := time.Now()
 	ctx, cancel := tcpConnectContext(context.Background())
 	defer cancel()
@@ -37,7 +44,9 @@ func TestTCPConnectContext(t *testing.T) {
 	if !ok || deadline.Before(start.Add(15*time.Second)) || deadline.After(time.Now().Add(15*time.Second)) {
 		t.Fatalf("unexpected configured deadline: %v", deadline)
 	}
-	_ = SetTCPConnectTimeout(20)
+	if err := SetTCPConnectTimeout(MinTCPConnectTimeout); err != nil {
+		t.Fatal(err)
+	}
 	if current, _ := ctx.Deadline(); !current.Equal(deadline) {
 		t.Fatal("runtime update changed an existing connection budget")
 	}
