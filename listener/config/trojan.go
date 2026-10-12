@@ -25,6 +25,7 @@ type TrojanServer struct {
 	EchKey             string
 	AllowInsecure      bool
 	TrustedProxyHeader string
+	TrustedProxies     []string
 	ShadowTLS          ShadowTLS      `yaml:"shadow-tls" json:"shadow-tls,omitempty"`
 	ResTLS             ResTLS         `yaml:"res-tls" json:"res-tls,omitempty"`
 	JLSConfig          JLSConfig      `yaml:"jls-config" json:"jls-config,omitempty"`

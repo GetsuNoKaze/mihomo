@@ -22,6 +22,7 @@ import (
 	"github.com/metacubex/mihomo/listener/restls"
 	"github.com/metacubex/mihomo/listener/shadowtls"
 	"github.com/metacubex/mihomo/listener/sing"
+	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/ntp"
 	"github.com/metacubex/mihomo/transport/gun"
 	"github.com/metacubex/mihomo/transport/shadowsocks/core"
@@ -42,6 +43,7 @@ type Listener struct {
 	keys       map[[trojan.KeyLength]byte]string
 	pickCipher core.Cipher
 	handler    *sing.ListenerHandler
+	realIP     httputils.RealIP
 }
 
 func New(config LC.TrojanServer, lc C.InboundListenConfig, tunnel C.Tunnel, additions ...inbound.Addition) (sl *Listener, err error) {
@@ -79,7 +81,15 @@ func New(config LC.TrojanServer, lc C.InboundListenConfig, tunnel C.Tunnel, addi
 			return nil, err
 		}
 	}
-	sl = &Listener{false, config, nil, keys, pickCipher, h}
+	realIP, err := httputils.NewRealIP(config.TrustedProxyHeader, config.TrustedProxies, false)
+	if err != nil {
+		return nil, err
+	}
+	if realIP.Header != "" && len(realIP.Trusted) == 0 {
+		log.Warnln("[Trojan] %s: trusted-proxy-header %q is ignored until trusted-proxies lists the reverse proxies", config.Listen, realIP.Header)
+	}
+
+	sl = &Listener{false, config, nil, keys, pickCipher, h, realIP}
 
 	httpServer := http.Server{
 		IdleTimeout: 30 * time.Second,
@@ -266,13 +276,21 @@ func (l *Listener) AddrList() (addrList []net.Addr) {
 }
 
 func (l *Listener) HandleHTTPConn(r *http.Request, conn net.Conn, tunnel C.Tunnel, additions ...inbound.Addition) {
-	if ap := httputils.ClientAddrPortFromHeader(r, l.config.TrustedProxyHeader); ap.IsValid() {
+	if ap := l.realIP.ClientAddrPort(r); ap.IsValid() {
 		additions = append(slices.Clip(additions), inbound.WithSrcAddrPort(ap))
+		l.serveConn(conn, httputils.ClientNetAddr(ap, conn.RemoteAddr()), tunnel, additions...)
+		return
 	}
 	l.HandleConn(conn, tunnel, additions...)
 }
 
 func (l *Listener) HandleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbound.Addition) {
+	l.serveConn(conn, nil, tunnel, additions...)
+}
+
+// serveConn serves a trojan connection; client is the address of the client
+// behind a trusted reverse proxy, nil when the TCP peer is the client.
+func (l *Listener) serveConn(conn net.Conn, client net.Addr, tunnel C.Tunnel, additions ...inbound.Addition) {
 	defer conn.Close()
 
 	if l.pickCipher != nil {
@@ -289,7 +307,10 @@ func (l *Listener) HandleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbou
 		additions = append(additions, inbound.WithInUser(user))
 	} else {
 		//log.Warnln("no such key")
-		authevent.EmitAddr("trojan", authevent.ReasonWrongCredentials, conn.LocalAddr(), conn.RemoteAddr())
+		if client == nil {
+			client = conn.RemoteAddr()
+		}
+		authevent.EmitAddr("trojan", authevent.ReasonWrongCredentials, conn.LocalAddr(), client)
 		return
 	}
 

@@ -18,6 +18,7 @@ import (
 	"github.com/metacubex/mihomo/listener/restls"
 	"github.com/metacubex/mihomo/listener/shadowtls"
 	"github.com/metacubex/mihomo/listener/sing"
+	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/ntp"
 	"github.com/metacubex/mihomo/transport/gun"
 	"github.com/metacubex/mihomo/transport/vless/encryption"
@@ -37,6 +38,7 @@ type Listener struct {
 	listeners  []net.Listener
 	service    *Service[string]
 	decryption *encryption.ServerInstance
+	realIP     httputils.RealIP
 }
 
 func New(config LC.VlessServer, lc C.InboundListenConfig, tunnel C.Tunnel, additions ...inbound.Addition) (sl *Listener, err error) {
@@ -68,7 +70,15 @@ func New(config LC.VlessServer, lc C.InboundListenConfig, tunnel C.Tunnel, addit
 			return it.Flow
 		}))
 
-	sl = &Listener{config: config, service: service}
+	realIP, err := httputils.NewRealIP(config.TrustedProxyHeader, config.TrustedProxies, false)
+	if err != nil {
+		return nil, err
+	}
+	if realIP.Header != "" && len(realIP.Trusted) == 0 {
+		log.Warnln("[VLESS] %s: trusted-proxy-header %q is ignored until trusted-proxies lists the reverse proxies", config.Listen, realIP.Header)
+	}
+
+	sl = &Listener{config: config, service: service, realIP: realIP}
 
 	sl.decryption, err = encryption.NewServer(config.Decryption)
 	if err != nil {
@@ -337,14 +347,25 @@ func (l *Listener) AddrList() (addrList []net.Addr) {
 }
 
 func (l *Listener) HandleHTTPConn(r *http.Request, conn net.Conn, tunnel C.Tunnel, additions ...inbound.Addition) {
-	if ap := httputils.ClientAddrPortFromHeader(r, l.config.TrustedProxyHeader); ap.IsValid() {
+	if ap := l.realIP.ClientAddrPort(r); ap.IsValid() {
 		additions = append(slices.Clip(additions), inbound.WithSrcAddrPort(ap))
+		l.serveConn(conn, httputils.ClientNetAddr(ap, conn.RemoteAddr()), tunnel, additions...)
+		return
 	}
 	l.HandleConn(conn, tunnel, additions...)
 }
 
 func (l *Listener) HandleConn(conn net.Conn, tunnel C.Tunnel, additions ...inbound.Addition) {
+	l.serveConn(conn, nil, tunnel, additions...)
+}
+
+// serveConn serves a vless connection; client is the address of the client
+// behind a trusted reverse proxy, nil when the TCP peer is the client.
+func (l *Listener) serveConn(conn net.Conn, client net.Addr, tunnel C.Tunnel, additions ...inbound.Addition) {
 	ctx := sing.WithAdditions(context.TODO(), additions...)
+	if client != nil {
+		ctx = withClientAddr(ctx, client)
+	}
 	if l.decryption != nil {
 		c, err := l.decryption.Handshake(conn, nil)
 		if err != nil {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/metacubex/mihomo/adapter/inbound"
+	"github.com/metacubex/mihomo/common/httputils"
 	"github.com/metacubex/mihomo/component/ca"
 	"github.com/metacubex/mihomo/component/ech"
 	C "github.com/metacubex/mihomo/constant"
@@ -48,11 +49,21 @@ func New(config LC.Hysteria2RealmServer, lc C.InboundListenConfig, tunnel C.Tunn
 	if err != nil {
 		return nil, fmt.Errorf("invalid realm name pattern %q: %v", config.RealmNamePattern, err)
 	}
+	// Without trusted-proxies the header is believed from any client, as
+	// before the option existed; set it to stop the per-IP realm limit from
+	// being dodged with a forged header.
+	realIP, err := httputils.NewRealIP(config.TrustedProxyHeader, config.TrustedProxies, true)
+	if err != nil {
+		return nil, err
+	}
+	if realIP.Header != "" && len(realIP.Trusted) == 0 {
+		log.Warnln("[RealmServer] %s: trusted-proxy-header %q is believed from any client, set trusted-proxies to the addresses of the reverse proxies", config.Listen, realIP.Header)
+	}
 	s := newServer(serverConfig{
 		realmToken:     config.Token,
 		maxRealms:      config.MaxRealms,
 		maxRealmsPerIP: config.MaxRealmsPerIP,
-		proxyHeader:    config.TrustedProxyHeader,
+		realIP:         realIP,
 		realmIDPattern: pat,
 	})
 

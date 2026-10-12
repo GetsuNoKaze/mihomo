@@ -55,7 +55,7 @@ func (s *server) checkRealmToken(r *http.Request) bool {
 }
 
 func (s *server) requestIP(r *http.Request) string {
-	return clientIP(r, s.proxyHeader)
+	return clientIP(r, s.realIP)
 }
 
 func (s *server) realmID(w http.ResponseWriter, r *http.Request) (string, bool) {

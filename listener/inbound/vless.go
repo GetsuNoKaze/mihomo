@@ -23,6 +23,7 @@ type VlessOption struct {
 	EchKey             string        `inbound:"ech-key,omitempty"`
 	AllowInsecure      bool          `inbound:"allow-insecure,omitempty"`
 	TrustedProxyHeader string        `inbound:"trusted-proxy-header,omitempty"`
+	TrustedProxies     []string      `inbound:"trusted-proxies,omitempty"`
 	ShadowTLS          ShadowTLS     `inbound:"shadow-tls,omitempty"`
 	ResTLS             ResTLS        `inbound:"res-tls,omitempty"`
 	JLSConfig          JLSConfig     `inbound:"jls-config,omitempty"`
@@ -130,6 +131,7 @@ func NewVless(options *VlessOption) (*Vless, error) {
 			EchKey:             options.EchKey,
 			AllowInsecure:      options.AllowInsecure,
 			TrustedProxyHeader: options.TrustedProxyHeader,
+			TrustedProxies:     options.TrustedProxies,
 			ShadowTLS:          options.ShadowTLS.Build(),
 			ResTLS:             options.ResTLS.Build(),
 			JLSConfig:          options.JLSConfig.Build(),

@@ -108,7 +108,7 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, metadata 
 
 	user, loaded := s.userMap[requestUUID]
 	if !loaded {
-		authevent.EmitAddr("vless", authevent.ReasonWrongCredentials, conn.LocalAddr(), conn.RemoteAddr())
+		authevent.EmitAddr("vless", authevent.ReasonWrongCredentials, conn.LocalAddr(), clientAddr(ctx, conn))
 		return E.New("unknown UUID: ", uuid.FromBytesOrNil(requestUUID[:]))
 	}
 	ctx = auth.ContextWithUser(ctx, user)
@@ -145,6 +145,21 @@ func (s *Service[T]) NewConnection(ctx context.Context, conn net.Conn, metadata 
 	default:
 		return E.New("unknown command: ", command)
 	}
+}
+
+type clientAddrKey struct{}
+
+// withClientAddr records the address of the client behind a trusted reverse
+// proxy, for the auth events of the connection.
+func withClientAddr(ctx context.Context, addr net.Addr) context.Context {
+	return context.WithValue(ctx, clientAddrKey{}, addr)
+}
+
+func clientAddr(ctx context.Context, conn net.Conn) net.Addr {
+	if addr, ok := ctx.Value(clientAddrKey{}).(net.Addr); ok {
+		return addr
+	}
+	return conn.RemoteAddr()
 }
 
 func flowName(value string) string {

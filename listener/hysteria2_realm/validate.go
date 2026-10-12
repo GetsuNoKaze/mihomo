@@ -42,8 +42,8 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func clientIP(r *http.Request, header string) string {
-	if ap := httputils.ClientAddrPortFromHeader(r, header); ap.IsValid() {
+func clientIP(r *http.Request, realIP httputils.RealIP) string {
+	if ap := realIP.ClientAddrPort(r); ap.IsValid() {
 		return ap.Addr().String()
 	}
 
