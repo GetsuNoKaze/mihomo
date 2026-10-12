@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	C "github.com/metacubex/mihomo/constant"
 
@@ -142,6 +143,13 @@ func TestBindRace(t *testing.T) {
 			}
 		}()
 	}
+	// Let the binders get going before the swaps start: on a slow or
+	// loaded machine the loop below can otherwise finish before any bind.
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(sessions) > 0
+	}, 5*time.Second, time.Millisecond)
 	for i := 0; i < 2000; i++ {
 		users := []C.InboundUser{{Name: "a", Secret: "1"}}
 		if i%2 == 0 {
