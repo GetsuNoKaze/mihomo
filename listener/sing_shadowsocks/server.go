@@ -70,7 +70,26 @@ func New(config LC.ShadowsocksServer, lc C.InboundListenConfig, tunnel C.Tunnel,
 	sl = &Listener{}
 	sl.config = config
 
+	if err = ValidateUsers(config.Cipher, config.Password, config.Users); err != nil {
+		return nil, err
+	}
+
 	switch {
+	case len(config.Users) > 0:
+		// Shadowsocks 2022 with EIH: the multi service puts the user name in
+		// the context (auth.ContextWithUser) for TCP and UDP, which the sing
+		// listener handler turns into metadata.InUser.
+		var service *shadowaead_2022.MultiService[string]
+		service, err = shadowaead_2022.NewMultiServiceWithPassword[string](config.Cipher, config.Password, udpTimeout, h, ntp.Now)
+		if err == nil {
+			names := make([]string, len(config.Users))
+			passwords := make([]string, len(config.Users))
+			for i, user := range config.Users {
+				names[i], passwords[i] = user.Name, user.Password
+			}
+			err = service.UpdateUsersWithPasswords(names, passwords)
+		}
+		sl.service = service
 	case config.Cipher == shadowsocks.MethodNone:
 		sl.service = shadowsocks.NewNoneService(udpTimeout, h)
 	case common.Contains(shadowaead.List, config.Cipher):

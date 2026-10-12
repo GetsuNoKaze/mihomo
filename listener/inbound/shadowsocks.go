@@ -11,15 +11,24 @@ import (
 
 type ShadowSocksOption struct {
 	BaseOption
-	Password   string     `inbound:"password"`
-	Cipher     string     `inbound:"cipher"`
-	UDP        bool       `inbound:"udp,omitempty"`
-	MuxOption  MuxOption  `inbound:"mux-option,omitempty"`
-	ShadowTLS  ShadowTLS  `inbound:"shadow-tls,omitempty"`
-	ResTLS     ResTLS     `inbound:"res-tls,omitempty"`
-	JLSConfig  JLSConfig  `inbound:"jls-config,omitempty"`
-	KcpTun     KcpTun     `inbound:"kcp-tun,omitempty"`
-	SimpleObfs SimpleObfs `inbound:"simple-obfs,omitempty"`
+	Password   string            `inbound:"password"`
+	Cipher     string            `inbound:"cipher"`
+	Users      []ShadowSocksUser `inbound:"users,omitempty"`
+	UDP        bool              `inbound:"udp,omitempty"`
+	MuxOption  MuxOption         `inbound:"mux-option,omitempty"`
+	ShadowTLS  ShadowTLS         `inbound:"shadow-tls,omitempty"`
+	ResTLS     ResTLS            `inbound:"res-tls,omitempty"`
+	JLSConfig  JLSConfig         `inbound:"jls-config,omitempty"`
+	KcpTun     KcpTun            `inbound:"kcp-tun,omitempty"`
+	SimpleObfs SimpleObfs        `inbound:"simple-obfs,omitempty"`
+}
+
+// ShadowSocksUser is one user of a multi-user Shadowsocks 2022 inbound (EIH).
+// With users set, the inbound password is the server key (iPSK) and each
+// user's password is its own key (uPSK); the client then uses "iPSK:uPSK".
+type ShadowSocksUser struct {
+	Name     string `inbound:"name"`
+	Password string `inbound:"password"`
 }
 
 type SimpleObfs struct {
@@ -50,6 +59,13 @@ func NewShadowSocks(options *ShadowSocksOption) (*ShadowSocks, error) {
 	if err != nil {
 		return nil, err
 	}
+	users := make([]LC.ShadowsocksUser, len(options.Users))
+	for i, u := range options.Users {
+		users[i] = LC.ShadowsocksUser{Name: u.Name, Password: u.Password}
+	}
+	if err := sing_shadowsocks.ValidateUsers(options.Cipher, options.Password, users); err != nil {
+		return nil, err
+	}
 	return &ShadowSocks{
 		Base:   base,
 		config: options,
@@ -58,6 +74,7 @@ func NewShadowSocks(options *ShadowSocksOption) (*ShadowSocks, error) {
 			Listen:     base.RawAddress(),
 			Password:   options.Password,
 			Cipher:     options.Cipher,
+			Users:      users,
 			Udp:        options.UDP,
 			MuxOption:  options.MuxOption.Build(),
 			ShadowTLS:  options.ShadowTLS.Build(),
