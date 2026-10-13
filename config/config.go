@@ -1257,11 +1257,17 @@ func parseHosts(cfg *RawConfig) (*trie.DomainTrie[resolver.HostValue], error) {
 			}
 			if value.IsDomain {
 				node := tree.Search(value.Domain)
-				for node != nil && node.Data().IsDomain {
-					if node.Data().Domain == domain {
+				for hops := 0; node != nil && node.Data().IsDomain; hops++ {
+					target := node.Data().Domain
+					if target == domain || hops == resolver.MaxHostsHops {
 						return nil, fmt.Errorf("%s, there is a cycle in domain name mapping", domain)
 					}
-					node = tree.Search(node.Data().Domain)
+					next := tree.Search(target)
+					if next == node {
+						// a mapping onto itself (e.g. `+.example.com: example.com`) ends the chain
+						break
+					}
+					node = next
 				}
 			}
 			if err := tree.Insert(domain, value); err != nil {
