@@ -18,6 +18,7 @@ import (
 	"github.com/metacubex/mihomo/component/ca"
 	"github.com/metacubex/mihomo/component/ech"
 	C "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/hub/metrics"
 	"github.com/metacubex/mihomo/log"
 	"github.com/metacubex/mihomo/ntp"
 	"github.com/metacubex/mihomo/tunnel/statistic"
@@ -105,6 +106,8 @@ func SetUIPath(path string) {
 func router(isDebug bool, secret string, dohServer string, cors Cors) *chi.Mux {
 	r := chi.NewRouter()
 	cors.Apply(r)
+	r.Get("/healthz", healthAuth(secret, probe(metrics.Live)))
+	r.Get("/readyz", healthAuth(secret, probe(metrics.Ready)))
 	r.Group(func(r chi.Router) {
 		if secret != "" {
 			r.Use(authentication(secret))
@@ -126,6 +129,7 @@ func router(isDebug bool, secret string, dohServer string, cors Cors) *chi.Mux {
 		r.Get("/traffic/users", trafficUsers)
 		r.Mount("/limits", limitsRouter())
 		r.Get("/memory", memory)
+		r.Get("/metrics", getMetrics)
 		r.Get("/version", version)
 		r.Mount("/configs", configRouter())
 		r.Mount("/proxies", proxyRouter())

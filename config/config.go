@@ -219,6 +219,32 @@ type Config struct {
 	Sniffer       *sniffer.Config
 	TLS           *TLS
 	UserLimits    []statistic.UserLimit
+	Metrics       *Metrics
+}
+
+// Metrics is the `metrics` section and `health-without-auth`.
+type Metrics struct {
+	// Enable serves GET /metrics on the controller and counts the traffic
+	// per inbound.
+	Enable bool `json:"enable"`
+	// PerUser adds the series of every inbound user (high cardinality).
+	PerUser bool `json:"per-user"`
+	// HealthWithoutAuth serves GET /healthz and GET /readyz without the
+	// controller secret.
+	HealthWithoutAuth bool `json:"health-without-auth"`
+}
+
+func parseMetrics(rawCfg *RawConfig) *Metrics {
+	return &Metrics{
+		Enable:            rawCfg.Metrics.Enable,
+		PerUser:           rawCfg.Metrics.PerUser,
+		HealthWithoutAuth: rawCfg.HealthWithoutAuth,
+	}
+}
+
+type RawMetrics struct {
+	Enable  bool `yaml:"enable" json:"enable"`
+	PerUser bool `yaml:"per-user" json:"per-user"`
 }
 
 type RawCors struct {
@@ -452,6 +478,7 @@ type RawConfig struct {
 	GeositeMatcher                string                  `yaml:"geosite-matcher" json:"geosite-matcher"`
 	TCPConcurrent                 bool                    `yaml:"tcp-concurrent" json:"tcp-concurrent"`
 	UserStats                     bool                    `yaml:"user-stats" json:"user-stats"`
+	HealthWithoutAuth             bool                    `yaml:"health-without-auth" json:"health-without-auth"`
 	TCPConnectTimeout             int64                   `yaml:"tcp-connect-timeout" json:"tcp-connect-timeout"`
 	FindProcessMode               process.FindProcessMode `yaml:"find-process-mode" json:"find-process-mode"`
 	GlobalClientFingerprint       string                  `yaml:"global-client-fingerprint" json:"global-client-fingerprint"`
@@ -469,6 +496,7 @@ type RawConfig struct {
 	SubRules      map[string][]string       `yaml:"sub-rules" json:"sub-rules"`
 	Listeners     []map[string]any          `yaml:"listeners" json:"listeners"`
 	UserLimits    []map[string]any          `yaml:"user-limits" json:"user-limits"`
+	Metrics       RawMetrics                `yaml:"metrics" json:"metrics"`
 	Hosts         map[string]any            `yaml:"hosts" json:"hosts"`
 	DNS           RawDNS                    `yaml:"dns" json:"dns"`
 	NTP           RawNTP                    `yaml:"ntp" json:"ntp"`
@@ -668,6 +696,7 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 		return nil, err
 	}
 	config.Controller = controller
+	config.Metrics = parseMetrics(rawCfg)
 
 	experimental, err := parseExperimental(rawCfg)
 	if err != nil {
