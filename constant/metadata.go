@@ -225,6 +225,16 @@ func (m *Metadata) RemoteAddress() string {
 	return net.JoinHostPort(m.String(), strconv.FormatUint(uint64(m.DstPort), 10))
 }
 
+// LogAddress is RemoteAddress for the connection logs: when a sniffed domain
+// is not the destination (no override-destination), it follows in brackets,
+// "1.2.3.4:443 (example.com)"; the connection still goes to RemoteAddress.
+func (m *Metadata) LogAddress() string {
+	if m.SniffHost == "" || m.SniffHost == m.Host {
+		return m.RemoteAddress()
+	}
+	return m.RemoteAddress() + " (" + m.SniffHost + ")"
+}
+
 func (m *Metadata) SourceAddress() string {
 	return net.JoinHostPort(m.SrcIP.String(), strconv.FormatUint(uint64(m.SrcPort), 10))
 }
