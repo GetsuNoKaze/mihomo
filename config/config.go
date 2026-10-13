@@ -70,6 +70,9 @@ type General struct {
 	KeepAliveInterval int                     `json:"keep-alive-interval"`
 	DisableKeepAlive  bool                    `json:"disable-keep-alive"`
 	UserStats         bool                    `json:"user-stats"`
+
+	LogFormat          log.LogFormat `json:"log-format"`
+	LogTimestampFormat string        `json:"log-timestamp-format"`
 }
 
 // Inbound config
@@ -419,6 +422,7 @@ type RawSniffer struct {
 	Ports           []string `yaml:"port-whitelist" json:"port-whitelist"`
 	ForceDnsMapping bool     `yaml:"force-dns-mapping" json:"force-dns-mapping"`
 	ParsePureIp     bool     `yaml:"parse-pure-ip" json:"parse-pure-ip"`
+	SkipThreshold   *int     `yaml:"skip-threshold" json:"skip-threshold"`
 
 	Sniff map[string]RawSniffingConfig `yaml:"sniff" json:"sniff"`
 }
@@ -456,6 +460,8 @@ type RawConfig struct {
 	Mode                          T.TunnelMode            `yaml:"mode" json:"mode"`
 	UnifiedDelay                  bool                    `yaml:"unified-delay" json:"unified-delay"`
 	LogLevel                      log.LogLevel            `yaml:"log-level" json:"log-level"`
+	LogFormat                     log.LogFormat           `yaml:"log-format" json:"log-format"`
+	LogTimestampFormat            string                  `yaml:"log-timestamp-format" json:"log-timestamp-format"`
 	IPv6                          bool                    `yaml:"ipv6" json:"ipv6"`
 	ExternalController            string                  `yaml:"external-controller" json:"external-controller"`
 	ExternalControllerRoutingMark int                     `yaml:"external-controller-routing-mark" json:"external-controller-routing-mark"`
@@ -827,6 +833,10 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 	if err := T.ValidateTCPConnectTimeout(cfg.TCPConnectTimeout); err != nil {
 		return nil, fmt.Errorf("invalid tcp-connect-timeout: %w", err)
 	}
+	logTimestampFormat := cfg.LogTimestampFormat
+	if logTimestampFormat == "" {
+		logTimestampFormat = log.DefaultTimestampFormat
+	}
 	return &General{
 		Inbound: Inbound{
 			Port:              cfg.Port,
@@ -869,6 +879,9 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 		KeepAliveInterval: cfg.KeepAliveInterval,
 		DisableKeepAlive:  cfg.DisableKeepAlive,
 		UserStats:         cfg.UserStats,
+
+		LogFormat:          cfg.LogFormat,
+		LogTimestampFormat: logTimestampFormat,
 	}, nil
 }
 
@@ -1916,6 +1929,10 @@ func parseSniffer(snifferRaw RawSniffer, ruleProviders map[string]P.RuleProvider
 		Enable:          snifferRaw.Enable,
 		ForceDnsMapping: snifferRaw.ForceDnsMapping,
 		ParsePureIp:     snifferRaw.ParsePureIp,
+		SkipThreshold:   snifferRaw.SkipThreshold,
+	}
+	if t := snifferRaw.SkipThreshold; t != nil && (*t < -1 || *t > sniffer.MaxSkipThreshold) {
+		return nil, fmt.Errorf("sniffer.skip-threshold must be -1 (never skip) or 0-%d, got %d", sniffer.MaxSkipThreshold, *t)
 	}
 	loadSniffer := make(map[snifferTypes.Type]sniffer.SnifferConfig)
 

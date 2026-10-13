@@ -42,6 +42,11 @@ geo-update-interval: 24 # 更新间隔，单位：小时
 # geosite-matcher: succinct
 
 log-level: debug # 日志等级 silent/error/warning/info/debug
+# Format of the lines printed to stdout: text (default, key=value as before) or json (one object per line
+# with time/level/msg, for Loki, ELK and the like). The controller's /logs stream is not affected.
+# log-format: text
+# Go time layout of the timestamp in both formats; empty means the default below
+# log-timestamp-format: "2006-01-02T15:04:05.000000000Z07:00"
 
 ipv6: true # 开启 IPv6 总开关，关闭阻断所有 IPv6 链接和屏蔽 DNS 请求 AAAA 记录
 
@@ -262,6 +267,9 @@ sniffer:
   # 是否使用嗅探结果作为实际访问，默认 true
   # 全局配置，优先级低于 sniffer.sniff 实际配置
   override-destination: false
+  # TCP destinations (ip:port) whose domain sniffing failed more than this many times are not sniffed
+  # for 10 minutes; 0-254, -1 never skips, default 5. force-domain connections are always sniffed.
+  # skip-threshold: 5
   sniff: # TLS 和 QUIC 默认如果不配置 ports 默认嗅探 443
     QUIC:
     #  ports: [ 443 ]
@@ -375,6 +383,8 @@ dns:
 
   fake-ip-range: 198.18.0.1/16 # fake-ip 池设置
   # fake-ip-range6: fdfe:dcba:9876::1/64 # fake-ip6 池设置
+  # Names whose labels hold bytes no host name can (a dot, a space, a non-ASCII byte: \. \032 \152 in logs)
+  # never get a fake IP, they are resolved as usual and usually end in NXDOMAIN
 
   # 配置不使用 fake-ip 的域名
   fake-ip-filter:
@@ -1411,6 +1421,7 @@ proxies: # socks5
     # ping-restart: 60 # 默认值为 0
     # tran-window: 3600 # 旧 data key 在 rekey 后保留的秒数；默认 3600，显式设为 0 表示立即过期，应与服务端 --tran-window 对齐
     # handshake-timeout: 30 # 单位为秒；配置后握手时不受外层连接超时影响；默认值为 0，表示仅使用外层连接超时
+    # tls-version-min: "1.3" # lowest TLS version of the control channel, "1.2" or "1.3"; unset = 1.2 (as --tls-version-min)
     # mtu: 1500
     udp: true
     # ip-stack:

@@ -38,6 +38,26 @@ func TestParseBitTorrentSnifferDocumentedPorts(t *testing.T) {
 	assert.False(t, ports.Check(3306))
 }
 
+func TestParseSnifferSkipThreshold(t *testing.T) {
+	raw, err := UnmarshalRawConfig([]byte("sniffer:\n  enable: true\n"))
+	assert.NoError(t, err)
+	cfg, err := parseSniffer(raw.Sniffer, nil)
+	assert.NoError(t, err)
+	assert.Nil(t, cfg.SkipThreshold, "omitted keeps the dispatcher default")
+
+	for _, v := range []int{-1, 0, 5, 254} {
+		v := v
+		cfg, err := parseSniffer(RawSniffer{Enable: true, SkipThreshold: &v}, nil)
+		assert.NoError(t, err, v)
+		assert.Equal(t, v, *cfg.SkipThreshold)
+	}
+	for _, v := range []int{-2, 255, 256, 1000} {
+		v := v
+		_, err := parseSniffer(RawSniffer{Enable: true, SkipThreshold: &v}, nil)
+		assert.Error(t, err, v)
+	}
+}
+
 func TestParseBitTorrentSnifferLegacyList(t *testing.T) {
 	cfg, err := parseSniffer(RawSniffer{
 		Enable:   true,
