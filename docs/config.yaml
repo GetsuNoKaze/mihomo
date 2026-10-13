@@ -424,6 +424,10 @@ dns:
     - https://mozilla.cloudflare-dns.com/dns-query#DNS&h3=true # 指定策略组和使用 HTTP/3
     - dhcp://en0 # dns from dhcp
     - quic://dns.adguard.com:784 # DNS over QUIC
+    # DNSCrypt v2 (sdns:// DNS stamp, protocol 0x01 only; DoH/DoT/DoQ stamps are rejected, use https:// / tls:// / quic://)
+    # 支持 #ProxyGroupName / #en0 等参数，证书查询与加密查询都走同一出口；响应被截断 (TC) 时自动改用 TCP 重试
+    # - sdns://AQMAAAAAAAAAEzE0OS4xMTIuMTEyLjEwOjg0NDMgZ8hHuMh1jNEgJFVDvnVnRt803x2EwAuMRwNo34Idhj4ZMi5kbnNjcnlwdC1jZXJ0LnF1YWQ5Lm5ldA # Quad9
+    # - 'sdns://AQMAAAAAAAAAEzE0OS4xMTIuMTEyLjEwOjg0NDMgZ8hHuMh1jNEgJFVDvnVnRt803x2EwAuMRwNo34Idhj4ZMi5kbnNjcnlwdC1jZXJ0LnF1YWQ5Lm5ldA#DNS'
     # - ts://tailscale # 使用指定 Tailscale 出站的 DNS 配置查询
     # - et://easytier # 仅解析 overlay A/PTR；建议放在 nameserver-policy
     # - '8.8.8.8#RULES' # 效果同respect-rules，但仅对该服务器生效

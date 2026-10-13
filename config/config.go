@@ -1340,6 +1340,10 @@ func parseNameServer(servers []string, respectRules bool, preferH3 bool) ([]dns.
 		case "quic":
 			addr, err = hostWithDefaultPort(u.Host, "853")
 			dnsNetType = "quic" // DNS over QUIC
+		case "sdns":
+			addr = "sdns://" + u.Host // the stamp is opaque base64url; #fragment is parsed above
+			dnsNetType = "dnscrypt"   // DNSCrypt v2
+			err = dns.ValidateDNSCryptStamp(addr)
 		case "system":
 			dnsNetType = "system" // System DNS
 		case "ts", "tailscale":
