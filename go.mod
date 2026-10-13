@@ -151,4 +151,4 @@ replace google.golang.org/protobuf => github.com/metacubex/protobuf-go v0.0.0-20
 
 replace github.com/metacubex/utls => github.com/getmikan/utls v1.8.8-citrus.1
 
-replace github.com/metacubex/http => github.com/getmikan/http v0.1.8-citrus.1
+replace github.com/metacubex/http => github.com/getmikan/http v0.1.8-citrus.2
