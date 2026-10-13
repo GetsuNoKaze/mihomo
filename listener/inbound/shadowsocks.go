@@ -55,9 +55,17 @@ type ShadowSocks struct {
 }
 
 func NewShadowSocks(options *ShadowSocksOption) (*ShadowSocks, error) {
-	base, err := NewBase(&options.BaseOption)
+	base, err := newStreamBase(&options.BaseOption)
 	if err != nil {
 		return nil, err
+	}
+	if base.IsUnix() {
+		if options.UDP {
+			return nil, errUnixUDP(options.Listen, "udp")
+		}
+		if options.KcpTun.Enable {
+			return nil, errUnixUDP(options.Listen, "kcp-tun")
+		}
 	}
 	users := make([]LC.ShadowsocksUser, len(options.Users))
 	for i, u := range options.Users {

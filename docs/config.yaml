@@ -1938,7 +1938,43 @@ sub-rules:
 # socks/http/mixed): GET/PUT/POST /inbounds/{name}/users, PATCH/DELETE
 # /inbounds/{name}/users/{user}. The changes live in memory; a config reload sets the users
 # of the config again, and a reload that changes only the users updates them in place.
+#
+# 基于 TCP 的 listeners（http、socks、mixed、shadowsocks、snell、vless、trojan、anytls、sudoku、
+# trusttunnel、tunnel、hysteria2-realm）可监听 UNIX socket：listen: unix:/path（不填 port），
+# 用于放在 nginx/Caddy 后面。unix-mode 为 socket 权限（八进制，默认 0660；Windows 忽略）。
+# 启动时会删除无人监听的残留 socket；正在使用的 socket 或非 socket 文件会报错且不会被删除；关闭时删除 socket。
+# UDP（udp、kcp-tun、network: udp）以及 hysteria2、tuic、shadowquic、mieru、tun、redir、tproxy 不支持 UNIX socket。
+# UNIX socket 的对端视为 127.0.0.1（端口 0）：lan-allowed-ips、skip-auth-prefixes、trusted-proxies 等按回环地址处理；
+# 若要使用反向代理传来的真实 IP，需设置 trusted-proxy-header 并设置 trusted-proxies: [loopback]。
+# TCP-based listeners (http, socks, mixed, shadowsocks, snell, vless, trojan, anytls, sudoku,
+# trusttunnel, tunnel, hysteria2-realm) can listen on a unix socket instead of TCP ports, to sit
+# behind nginx or Caddy: listen: unix:/path, with no port. A relative path is taken from the home
+# directory. unix-mode sets the permissions of the socket (octal, default 0660: the user the core
+# runs as and its group; put the proxy's user in that group or use 0666), applied before anybody
+# can connect; Windows ignores it. On start a stale socket nobody listens on is removed; a socket
+# in use or a file that is not a socket is an error and is never removed. Close removes the socket.
+# UDP (udp, kcp-tun, network: udp) and the UDP/QUIC or host-bound listeners (hysteria2, tuic,
+# shadowquic, mieru, tun, redir, tproxy) cannot use a unix socket; udp defaults to false there.
+# A unix peer has no IP and is reported as 127.0.0.1 (port 0), like a proxy on a loopback port:
+# lan-allowed-ips, skip-auth-prefixes (127.0.0.1/8 there skips auth for every unix client),
+# per-user IP limits and SRC-IP rules see 127.0.0.1. To get the client address the proxy
+# forwards, set trusted-proxy-header and trusted-proxies: [loopback] (vless, trojan, hysteria2-realm).
+#   nginx: proxy_pass http://unix:/run/citrus/vless.sock;  (or grpc_pass unix:/run/citrus/vless.sock;)
+#   Caddy: reverse_proxy unix//run/citrus/vless.sock
 listeners:
+  # - name: vless-unix
+  #   type: vless
+  #   listen: unix:/run/citrus/vless.sock
+  #   unix-mode: 0660
+  #   users:
+  #     - username: 1
+  #       uuid: 9d0cb9d0-964f-4ef6-897d-6c6b3ccf9e68
+  #   xhttp-config:
+  #     path: "/xhttp"
+  #   allow-insecure: true # TLS is terminated by the reverse proxy
+  #   trusted-proxy-header: X-Forwarded-For
+  #   trusted-proxies: [loopback]
+
   - name: socks5-in-1
     type: socks
     port: 10808 # 支持使用ports格式，例如200,302 or 200,204,401-429,501-503
