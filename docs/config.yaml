@@ -1273,7 +1273,16 @@ proxies: # socks5
     # exit-node-allow-lan-access: true # 使用 exit node 时是否允许访问本地 LAN
     # 当目标不在 Tailscale 路由内时，连接会直接报错，不会回退到直连；
     # 访问公网需要配置可用的 exit-node，或接受覆盖目标网段的 subnet routes。
-    # 一个出站代理的标识。当值不为空时，将使用指定的 proxy 发出 Tailscale 控制面和 DERP/STUN 等连接
+    # 一个出站代理的标识。当值不为空时，Tailscale 控制面与 DERP 连接（TCP/HTTPS）经由指定的 proxy 发出；
+    # 此时不打开任何本地 UDP 套接字（不直连对端、不做 STUN/端口映射、不发 ICMP 探测），
+    # 所有对端流量都经 DERP 中继，延迟与吞吐不如直连，但不会有流量绕过该 proxy。
+    # 经 tailscale 转发到非 tailnet 上游的纯 UDP DNS 查询也会失败（MagicDNS 名称不受影响）。
+    # dialer-proxy: the control plane and DERP (TCP/HTTPS) go through this proxy.
+    # No local UDP socket is opened then (no direct peer paths, STUN, port
+    # mapping or ICMP probes), so all peer traffic is relayed by DERP: higher
+    # latency and lower throughput than a direct path, but nothing goes around
+    # the proxy. Plain UDP DNS that tailscale forwards to non-tailnet upstreams
+    # fails too (MagicDNS names are not affected).
     # dialer-proxy: "ss1"
     # interface-name: "WLAN" # 指定出站网卡
     # routing-mark: 6666 # Linux 下配置 fwmark
