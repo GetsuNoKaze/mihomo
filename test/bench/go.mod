@@ -12,9 +12,9 @@ replace github.com/metacubex/mihomo => ../..
 // replacements do not apply to the modules that depend on it.
 replace google.golang.org/protobuf => github.com/metacubex/protobuf-go v0.0.0-20260306035419-7ceee0674686
 
-replace github.com/metacubex/utls => github.com/getmikan/utls v1.8.8-citrus.1
+replace github.com/metacubex/utls => github.com/getmikan/utls v1.8.8-citrus.3
 
-replace github.com/metacubex/http => github.com/getmikan/http v0.1.8-citrus.1
+replace github.com/metacubex/http => github.com/getmikan/http v0.1.8-citrus.2
 
 require (
 	github.com/RyuaNerin/go-krypto v1.3.0 // indirect
@@ -150,3 +150,5 @@ require (
 	golang.org/x/tools v0.24.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )
+
+replace github.com/metacubex/tls => github.com/getmikan/tls v0.1.8-citrus.1
