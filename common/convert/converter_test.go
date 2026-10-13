@@ -294,3 +294,34 @@ func TestConvertsV2Ray_SkipsLegacyLinks(t *testing.T) {
 		assert.Equal(t, "aes-128-gcm", proxies[0]["cipher"])
 	}
 }
+
+func TestConvertsV2Ray_HTTPSocksVerifyCertByDefault(t *testing.T) {
+	tests := []struct {
+		link     string
+		insecure bool
+	}{
+		{"https://user:pass@proxy.example.com:443#https", false},
+		{"http://proxy.example.com:8080#http", false},
+		{"socks5://proxy.example.com:1080#socks", false},
+		{"https://proxy.example.com:443?skip-cert-verify=1#skip", true},
+		{"https://proxy.example.com:443?allowInsecure=true#allow", true},
+		{"https://proxy.example.com:443?insecure=1#insecure", true},
+		{"https://proxy.example.com:443?insecure=0#secure", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.link, func(t *testing.T) {
+			proxies, err := ConvertsV2Ray([]byte(tt.link))
+			assert.NoError(t, err)
+			if !assert.Len(t, proxies, 1) {
+				return
+			}
+			if tt.insecure {
+				assert.Equal(t, true, proxies[0]["skip-cert-verify"])
+			} else {
+				assert.NotContains(t, proxies[0], "skip-cert-verify")
+			}
+			_, err = adapter.ParseProxy(proxies[0])
+			assert.NoError(t, err)
+		})
+	}
+}
