@@ -22,6 +22,8 @@ type DialFunc = types.DialFunc
 
 var TooManyOpenStreams = types.TooManyOpenStreams
 
+var ClientClosed = types.ClientClosed
+
 // ErrV4Unsupported is returned for configs that still set the TUIC v4 `token`.
 var ErrV4Unsupported = fmt.Errorf("%w: TUIC v4 is no longer supported, use uuid/password (v5)", C.ErrRemovedProtocol)
 
