@@ -38,8 +38,9 @@ const minSmallRead = 512
 // where it starts; a connection that waits after a short message waits on
 // the small buffer.
 //
-// Everything else (cached data, Vision's replaceable reader and writer,
-// splice, read waiters) is bufio.Copy's own code.
+// Everything else (cached data, splice, read waiters) is bufio.Copy's own
+// code. The copy of single buffers while Vision may still replace the reader
+// or the writer chooses its buffer the same way.
 func copyConn(destination io.Writer, source io.Reader) (n int64, err error) {
 	if source == nil {
 		return 0, errors.New("nil reader")
@@ -49,6 +50,7 @@ func copyConn(destination io.Writer, source io.Reader) (n int64, err error) {
 	originSource := source
 	var readCounters, writeCounters []network.CountFunc
 	var _n int64
+	var full bool // the next read goes into a full buffer (see copyAdaptive)
 	possibly := bufio.MaxCopyExtendedOnceTimes
 	for {
 		source, readCounters = network.UnwrapCountReader(source, readCounters)
@@ -73,7 +75,7 @@ func copyConn(destination io.Writer, source io.Reader) (n int64, err error) {
 			(isReaderPossiblyReplaceable && replaceableReader.ReaderPossiblyReplaceable()) ||
 			(isWriterPossiblyReplaceable && replaceableWriter.WriterPossiblyReplaceable()) {
 			possibly--
-			_n, err = bufio.CopyExtendedOnce(destination, source, readCounters, writeCounters)
+			_n, err = copyOnce(destination, source, readCounters, writeCounters, &full)
 			n += _n
 			if err != nil {
 				if n == _n { // first time
@@ -96,14 +98,14 @@ func copyConn(destination io.Writer, source io.Reader) (n int64, err error) {
 		n += _n
 		return
 	}
-	_n, err = copyExtended(originSource, bufio.NewExtendedWriter(destination), bufio.NewExtendedReader(source), readCounters, writeCounters)
+	_n, err = copyExtended(originSource, bufio.NewExtendedWriter(destination), bufio.NewExtendedReader(source), readCounters, writeCounters, full)
 	n += _n
 	return
 }
 
 // copyExtended is bufio.CopyExtended with copyAdaptive in place of
 // bufio.CopyExtendedWithPool.
-func copyExtended(originSource io.Reader, destination network.ExtendedWriter, source network.ExtendedReader, readCounters []network.CountFunc, writeCounters []network.CountFunc) (n int64, err error) {
+func copyExtended(originSource io.Reader, destination network.ExtendedWriter, source network.ExtendedReader, readCounters []network.CountFunc, writeCounters []network.CountFunc, full bool) (n int64, err error) {
 	options := network.NewReadWaitOptions(source, destination)
 	if readWaiter, isReadWaiter := bufio.CreateReadWaiter(source); isReadWaiter {
 		needCopy := readWaiter.InitializeReadWaiter(options)
@@ -111,7 +113,7 @@ func copyExtended(originSource io.Reader, destination network.ExtendedWriter, so
 			return copyWait(originSource, destination, readWaiter, readCounters, writeCounters)
 		}
 	}
-	return copyAdaptive(originSource, destination, source, options, readCounters, writeCounters)
+	return copyAdaptive(originSource, destination, source, options, readCounters, writeCounters, full)
 }
 
 // copyWait is the read waiter loop of bufio.CopyExtended.
@@ -143,26 +145,14 @@ func copyWait(originSource io.Reader, destination network.ExtendedWriter, source
 
 // copyAdaptive is bufio.CopyExtendedWithPool that waits on a small buffer
 // while the source is idle (see copyConn).
-func copyAdaptive(originSource io.Reader, destination network.ExtendedWriter, source network.ExtendedReader, options network.ReadWaitOptions, readCounters []network.CountFunc, writeCounters []network.CountFunc) (n int64, err error) {
-	small := smallReadSize - options.FrontHeadroom - options.RearHeadroom
-	if small < minSmallRead {
-		small = minSmallRead
-	}
-	if options.MTU > 0 && options.MTU <= small {
-		// The full buffer is no larger than the small one.
+func copyAdaptive(originSource io.Reader, destination network.ExtendedWriter, source network.ExtendedReader, options network.ReadWaitOptions, readCounters []network.CountFunc, writeCounters []network.CountFunc, full bool) (n int64, err error) {
+	small := smallReadLen(options)
+	if small == 0 {
 		return bufio.CopyExtendedWithPool(originSource, destination, source, readCounters, writeCounters)
 	}
-	var (
-		notFirstTime bool
-		full         bool
-	)
+	var notFirstTime bool
 	for {
-		var buffer *buf.Buffer
-		if full {
-			buffer = options.NewBuffer()
-		} else {
-			buffer = newSmallBuffer(options, small)
-		}
+		buffer := newCopyBuffer(options, small, full)
 		err = source.ReadBuffer(buffer)
 		if err != nil {
 			buffer.Release()
@@ -188,6 +178,68 @@ func copyAdaptive(originSource io.Reader, destination network.ExtendedWriter, so
 		// A full read no larger than a small one: the burst is over.
 		full = dataLen >= small
 	}
+}
+
+// copyOnce is bufio.CopyExtendedOnce, which copies one buffer while Vision
+// may still replace the reader or the writer, with the buffer choice of
+// copyAdaptive: Vision pads the first packets of every connection, and a
+// connection that goes quiet in that phase waits here.
+func copyOnce(destination io.Writer, source io.Reader, readCounters []network.CountFunc, writeCounters []network.CountFunc, full *bool) (n int64, err error) {
+	options := network.NewReadWaitOptions(source, destination)
+	var buffer *buf.Buffer
+	calledWaitRead := false
+	if readWaiter, isReadWaiter := bufio.CreateReadWaiter(source); isReadWaiter {
+		if needCopy := readWaiter.InitializeReadWaiter(options); !needCopy || common.LowMemory {
+			calledWaitRead = true
+			buffer, err = readWaiter.WaitReadBuffer()
+		}
+	}
+	small := smallReadLen(options)
+	if !calledWaitRead {
+		if small == 0 {
+			buffer = options.NewBuffer()
+		} else {
+			buffer = newCopyBuffer(options, small, *full)
+		}
+		err = bufio.NewExtendedReader(source).ReadBuffer(buffer)
+		options.PostReturn(buffer)
+	}
+	if err != nil {
+		if buffer != nil {
+			buffer.Release()
+		}
+		return
+	}
+	dataLen := buffer.Len()
+	err = bufio.NewExtendedWriter(destination).WriteBuffer(buffer)
+	if err != nil {
+		buffer.Release()
+		return
+	}
+	countAll(readCounters, writeCounters, dataLen)
+	n = int64(dataLen)
+	*full = small == 0 || dataLen >= small
+	return
+}
+
+// smallReadLen is the data size of the small buffer for these options, or 0
+// when a full buffer is no larger.
+func smallReadLen(options network.ReadWaitOptions) int {
+	small := smallReadSize - options.FrontHeadroom - options.RearHeadroom
+	if small < minSmallRead {
+		small = minSmallRead
+	}
+	if options.MTU > 0 && options.MTU <= small {
+		return 0
+	}
+	return small
+}
+
+func newCopyBuffer(options network.ReadWaitOptions, small int, full bool) *buf.Buffer {
+	if full {
+		return options.NewBuffer()
+	}
+	return newSmallBuffer(options, small)
 }
 
 // newSmallBuffer is ReadWaitOptions.NewBuffer with room for size bytes of

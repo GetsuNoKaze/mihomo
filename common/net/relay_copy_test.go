@@ -261,3 +261,38 @@ func minInt(a, b int) int {
 	}
 	return b
 }
+
+// possiblyReader is a reader that Vision may still replace for its first
+// reads, so that the copy goes through copyOnce.
+type possiblyReader struct {
+	*scriptReader
+	left int
+}
+
+func (r *possiblyReader) Read(b []byte) (int, error) {
+	r.left--
+	return r.scriptReader.Read(b)
+}
+
+func (r *possiblyReader) ReaderPossiblyReplaceable() bool { return r.left > 0 }
+
+// TestCopyConnBufferSizesVision checks the buffer choice while Vision may
+// replace the reader, and that it carries over to the copy after it.
+func TestCopyConnBufferSizesVision(t *testing.T) {
+	src := &possiblyReader{scriptReader: &scriptReader{reads: []int{100, 5000, 100, 5000, 300}}, left: 3}
+	n, err := copyConn(io.Discard, src)
+	require.NoError(t, err)
+	assert.Equal(t, int64(100+5000+100+5000+300), n)
+	small, full := smallReadSize, buf.BufferSize
+	want := []int{
+		small, // 100 B, copyOnce
+		small, // 2 KB of 5000, copyOnce
+		full,  // the other 2952 B, copyOnce; Vision is done after this read
+		full,  // 100 B, after a full read
+		small, // 2 KB of 5000
+		full,  // the other 2952 B
+		full,  // 300 B, after a full read
+		small, // the EOF
+	}
+	assert.Equal(t, want, src.caps)
+}
