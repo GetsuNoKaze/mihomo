@@ -120,6 +120,25 @@ external-controller-routing-mark: 0
 #   - { inbound: vless-in, user: alice, speed-up: 10M, speed-down: 80Mbps, max-conns: 64, max-ips: 3, quota: 100G, expire-at: 1767225600 }
 #   - { inbound: vless-in, user: "*", speed-down: 20M, max-ips: 2, quota: 50G }
 
+# Prometheus 指标：GET /metrics（在 external-controller 上，需要 secret，Bearer 认证）。
+# 默认关闭；开启后按入站统计流量。per-user 输出每个入站用户的序列（基数高，默认关闭）。
+# Prometheus metrics: GET /metrics on the external controller, behind the
+# secret (bearer authorization). Off by default; when on, the traffic is also
+# counted per inbound. per-user adds the series of every inbound user (high
+# cardinality, off by default); they are cumulative and not affected by
+# GET /traffic/users?reset=true.
+# metrics:
+#   enable: true
+#   per-user: false
+
+# 健康检查 GET /healthz（隧道运行中）与 GET /readyz（配置已应用且所有 listeners 已启动），
+# 返回 200 "ok" 或 503。默认需要 secret；true 时这两个路径无需认证（仅返回状态）。
+# Health probes: GET /healthz (the tunnel is running) and GET /readyz (the
+# configuration is applied and every listener listens), 200 "ok" or 503.
+# They require the secret by default; true serves these two paths without it
+# (they reveal nothing but the state). The rest of the API keeps the secret.
+# health-without-auth: false
+
 # TCP 出站连接建立总期限（毫秒），包含代理握手及重试，默认 5000，取值范围 100-600000。
 # 仅影响新连接，不影响已建立连接的读写、UDP 或健康检查。
 # 代理适配器内部更短的独立超时仍可能先到期。
