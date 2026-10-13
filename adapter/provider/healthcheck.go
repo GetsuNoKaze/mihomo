@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/metacubex/mihomo/common/atomic"
+	"github.com/metacubex/mihomo/common/regexp2x"
 	"github.com/metacubex/mihomo/common/singledo"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
@@ -164,14 +165,14 @@ func (hc *HealthCheck) execute(b *errgroup.Group, url, uid string, option *extra
 				filters = append(filters, filter)
 			}
 
-			filterReg = regexp2.MustCompile(strings.Join(filters, "|"), regexp2.None)
+			filterReg = regexp2x.MustCompile(strings.Join(filters, "|"), regexp2.None)
 		}
 	}
 
 	for _, proxy := range hc.proxies {
 		// skip proxies that do not require health check
 		if filterReg != nil {
-			if match, _ := filterReg.MatchString(proxy.Name()); !match {
+			if !regexp2x.MatchString(filterReg, proxy.Name()) {
 				continue
 			}
 		}
