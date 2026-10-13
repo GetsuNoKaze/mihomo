@@ -37,6 +37,8 @@ type Manager struct {
 	pid           int32
 	memory        uint64
 	users         stdatomic.Pointer[UserManager]
+	inbounds      xsync.Map[string, *InboundCounter]
+	opened        stdatomic.Int64
 }
 
 // Users returns the per-user counters, creating them on first use.
@@ -61,6 +63,7 @@ func (m *Manager) CloseUser(key UserKey) {
 }
 
 func (m *Manager) Join(c Tracker) {
+	m.opened.Add(1)
 	m.connections.Store(c.ID(), c)
 }
 
