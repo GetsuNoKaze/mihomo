@@ -1883,6 +1883,16 @@ rule-providers:
       - '*.*.microsoft.com'
       - 'books.itunes.apple.com'
 
+# 运行时可通过 PUT /rules 替换顶层规则：{"rules": ["DOMAIN,a.com,DIRECT", ...]}，
+# 写法与此处相同，整体校验通过后才原子替换，否则返回 400 和错误。sub-rules 与 rule-providers 不变。
+# 替换只在内存中：重新加载配置（PUT /configs、重启）会恢复此处的规则。
+# Runtime API: PUT /rules {"rules": ["DOMAIN,a.com,DIRECT", ...]} replaces the
+# top level rules. The lines are written and parsed as here (proxies, groups,
+# RULE-SET, SUB-RULE, logic rules); the whole list is validated first and
+# swapped at once, a bad line gives 400 with the error. Proxies of
+# proxy-providers are not valid targets here either: use a group. sub-rules and
+# rule-providers stay as they are. The change is in memory only: the next config
+# reload (PUT /configs, a restart) brings back the rules of this file.
 rules:
   - RULE-SET,rule1,REJECT
   - IP-ASN,1,PROXY

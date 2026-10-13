@@ -1223,6 +1223,29 @@ func parseRules(rulesConfig []string, proxies map[string]C.Proxy, ruleProviders 
 	return rules, nil
 }
 
+// ParseRules parses top level rules exactly like the `rules:` section of a config:
+// every target must be a proxy, a proxy group or (for SUB-RULE) a sub-rule, and
+// every rule set must be a loaded rule provider. The proxies of proxy providers
+// are not valid targets, as in a config file; such a target gets an error that
+// names its provider.
+func ParseRules(rulesConfig []string, proxies map[string]C.Proxy, providers map[string]P.ProxyProvider, ruleProviders map[string]P.RuleProvider, subRules map[string][]C.Rule) ([]C.Rule, error) {
+	for idx, line := range rulesConfig {
+		tp, _, target, _ := RC.ParseRulePayload(line, true)
+		if target == "" || tp == "SUB-RULE" {
+			continue
+		}
+		if _, ok := proxies[target]; ok {
+			continue
+		}
+		for name, pd := range providers {
+			if slices.ContainsFunc(pd.Proxies(), func(p C.Proxy) bool { return p.Name() == target }) {
+				return nil, fmt.Errorf("rules[%d] [%s] error: proxy [%s] comes from proxy-provider [%s]; rules can target only proxies and proxy groups, use a group that includes it", idx, line, target, name)
+			}
+		}
+	}
+	return parseRules(rulesConfig, proxies, ruleProviders, subRules, "rules")
+}
+
 func parseHosts(cfg *RawConfig) (*trie.DomainTrie[resolver.HostValue], error) {
 	tree := trie.New[resolver.HostValue]()
 
