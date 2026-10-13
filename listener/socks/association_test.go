@@ -42,14 +42,39 @@ func newSocksPair(t *testing.T, store auth.AuthStore) (*Listener, *UDPListener, 
 	tunnel := &udpRecorder{packets: make(chan *C.Metadata, 16)}
 	additions := []inbound.Addition{inbound.WithInName("test-socks")}
 
-	tcp, err := NewWithConfig(LC.AuthServer{Enable: true, Listen: "127.0.0.1:0", AuthStore: store}, inbound.NewListenConfig(), tunnel, additions...)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = tcp.Close() })
-
 	// The UDP listener shares the TCP listener's port, as the real inbounds do.
-	udp, err := NewUDPWithConfig(LC.AuthServer{Enable: true, Listen: tcp.Address(), AuthStore: store}, inbound.NewListenConfig(), tunnel, additions...)
+	// Free TCP ports come out sequentially and a run of them can fall inside an
+	// excluded UDP range on Windows, so take a free UDP port first and open TCP
+	// on it, falling back to the other order.
+	newTCP := func(listen string) (*Listener, error) {
+		return NewWithConfig(LC.AuthServer{Enable: true, Listen: listen, AuthStore: store}, inbound.NewListenConfig(), tunnel, additions...)
+	}
+	newUDP := func(listen string) (*UDPListener, error) {
+		return NewUDPWithConfig(LC.AuthServer{Enable: true, Listen: listen, AuthStore: store}, inbound.NewListenConfig(), tunnel, additions...)
+	}
+	var tcp *Listener
+	var udp *UDPListener
+	var err error
+	for i := 0; i < 20; i++ {
+		udp, err = newUDP("127.0.0.1:0")
+		require.NoError(t, err)
+		if tcp, err = newTCP(udp.Address()); err == nil {
+			break
+		}
+		_ = udp.Close()
+
+		tcp, err = newTCP("127.0.0.1:0")
+		require.NoError(t, err)
+		if udp, err = newUDP(tcp.Address()); err == nil {
+			break
+		}
+		_ = tcp.Close()
+	}
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = udp.Close() })
+	t.Cleanup(func() {
+		_ = tcp.Close()
+		_ = udp.Close()
+	})
 	return tcp, udp, tunnel
 }
 
