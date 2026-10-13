@@ -61,10 +61,17 @@ func relayThrough(t *testing.T, inbound, user string, up, down int64) {
 	}()
 	local, err := cl.Accept()
 	require.NoError(t, err)
-	go N.Relay(local, tracker)
+	relayed := make(chan struct{})
+	go func() {
+		defer close(relayed)
+		N.Relay(local, tracker)
+	}()
 	<-done
 	_ = local.Close()
 	_ = tracker.Close()
+	// the relay counts a write after it returns: wait for it, or the last
+	// bytes may not be in the user counters yet when the caller reads them
+	<-relayed
 }
 
 type zeroReader struct{}
