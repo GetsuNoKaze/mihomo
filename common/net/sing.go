@@ -35,6 +35,12 @@ type WithUpstream = common.WithUpstream
 
 var UnwrapReader = network.UnwrapReader
 var UnwrapWriter = network.UnwrapWriter
+var UnwrapCountReader = network.UnwrapCountReader
+
+type ReadWaiter = network.ReadWaiter
+type CachedReader = network.CachedReader
+
+var CreateReadWaiter = bufio.CreateReadWaiter
 
 func NewDeadlineConn(conn net.Conn) ExtendedConn {
 	if deadline.IsPipe(conn) || deadline.IsPipe(UnwrapReader(conn)) {
