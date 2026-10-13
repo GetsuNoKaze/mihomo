@@ -96,26 +96,29 @@ func (r *scriptReader) Read(b []byte) (int, error) {
 // TestCopyConnBufferSizes checks the buffer a read waits on: small after a
 // short message or at the start, full while a burst fills its buffers.
 func TestCopyConnBufferSizes(t *testing.T) {
-	// a 100 B message, a 100 KiB burst in 16 KiB records, a 300 B message
+	// a 100 B message, a 100 KiB burst in 16 KiB records, a 300 B, a 1000 B
+	// and a 200 B message
 	reads := []int{100}
 	for left := 100 << 10; left > 0; left -= 16 << 10 {
 		reads = append(reads, minInt(16<<10, left))
 	}
-	reads = append(reads, 300)
+	reads = append(reads, 300, 1000, 200)
 	src := &scriptReader{reads: append([]int(nil), reads...)}
 	n, err := copyConn(io.Discard, src)
 	require.NoError(t, err)
-	assert.Equal(t, int64(100+100<<10+300), n)
+	assert.Equal(t, int64(100+100<<10+300+1000+200), n)
 
 	small, full := smallReadSize, buf.BufferSize
 	want := []int{
 		small,                        // the first read: 100 B
-		small,                        // the first 2 KB of the burst fill it
+		small,                        // the first 2 KiB of the burst fill it
 		full,                         // the rest of that record
-		full, full, full, full, full, // the other 16 KB records
-		full,  // the 4 KB tail of the burst
-		full,  // the 300 B message, after a full read
-		small, // the EOF, after a short read
+		full, full, full, full, full, // the other 16 KiB records
+		full,  // the 4 KiB tail of the burst
+		full,  // 300 B: one short read keeps the full buffer
+		full,  // 1000 B: two short reads in a row
+		small, // 200 B
+		small, // the EOF
 	}
 	assert.Equal(t, want, src.caps)
 }
@@ -279,19 +282,19 @@ func (r *possiblyReader) ReaderPossiblyReplaceable() bool { return r.left > 0 }
 // TestCopyConnBufferSizesVision checks the buffer choice while Vision may
 // replace the reader, and that it carries over to the copy after it.
 func TestCopyConnBufferSizesVision(t *testing.T) {
-	src := &possiblyReader{scriptReader: &scriptReader{reads: []int{100, 5000, 100, 5000, 300}}, left: 3}
+	src := &possiblyReader{scriptReader: &scriptReader{reads: []int{100, 5000, 100, 5000, 300, 200}}, left: 3}
 	n, err := copyConn(io.Discard, src)
 	require.NoError(t, err)
-	assert.Equal(t, int64(100+5000+100+5000+300), n)
+	assert.Equal(t, int64(100+5000+100+5000+300+200), n)
 	small, full := smallReadSize, buf.BufferSize
 	want := []int{
 		small, // 100 B, copyOnce
-		small, // 2 KB of 5000, copyOnce
+		small, // 2 KiB of 5000, copyOnce
 		full,  // the other 2952 B, copyOnce; Vision is done after this read
-		full,  // 100 B, after a full read
-		small, // 2 KB of 5000
-		full,  // the other 2952 B
-		full,  // 300 B, after a full read
+		full,  // 100 B: the choice carries over
+		full,  // 5000 B
+		full,  // 300 B
+		full,  // 200 B: two short reads in a row
 		small, // the EOF
 	}
 	assert.Equal(t, want, src.caps)

@@ -20,6 +20,13 @@ const smallReadSize = 2048
 // large headroom.
 const minSmallRead = 512
 
+// shortReadsToShrink is how many reads in a row that the small buffer would
+// have held switch a copy on full buffers back to the small one. One is not
+// enough: a bulk stream of a protocol that splits its frames (Shadowsocks
+// chunks, for one) alternates full and short reads, and would pay an extra
+// read and write per frame.
+const shortReadsToShrink = 2
+
 // copyConn is bufio.Copy with another fallback for sources that cannot wait
 // for data without a buffer.
 //
@@ -32,11 +39,11 @@ const minSmallRead = 512
 //
 // copyConn reads such a source into a small buffer while the connection looks
 // idle and into full pool buffers while data keeps coming: a read that fills
-// the small buffer switches to full buffers, and a full buffer read that
-// returns no more than the small buffer would have held switches back. A
-// bulk transfer runs on full buffers as before, at the cost of one more read
-// where it starts; a connection that waits after a short message waits on
-// the small buffer.
+// the small buffer switches to full buffers, and shortReadsToShrink reads in
+// a row that return no more than the small buffer would have held switch
+// back. A bulk transfer runs on full buffers as before, at the cost of one
+// more read where it starts; a connection that waits after short messages
+// waits on the small buffer.
 //
 // Everything else (cached data, splice, read waiters) is bufio.Copy's own
 // code. The copy of single buffers while Vision may still replace the reader
@@ -50,7 +57,7 @@ func copyConn(destination io.Writer, source io.Reader) (n int64, err error) {
 	originSource := source
 	var readCounters, writeCounters []network.CountFunc
 	var _n int64
-	var full bool // the next read goes into a full buffer (see copyAdaptive)
+	var sizing readSizing
 	possibly := bufio.MaxCopyExtendedOnceTimes
 	for {
 		source, readCounters = network.UnwrapCountReader(source, readCounters)
@@ -75,7 +82,7 @@ func copyConn(destination io.Writer, source io.Reader) (n int64, err error) {
 			(isReaderPossiblyReplaceable && replaceableReader.ReaderPossiblyReplaceable()) ||
 			(isWriterPossiblyReplaceable && replaceableWriter.WriterPossiblyReplaceable()) {
 			possibly--
-			_n, err = copyOnce(destination, source, readCounters, writeCounters, &full)
+			_n, err = copyOnce(destination, source, readCounters, writeCounters, &sizing)
 			n += _n
 			if err != nil {
 				if n == _n { // first time
@@ -98,14 +105,14 @@ func copyConn(destination io.Writer, source io.Reader) (n int64, err error) {
 		n += _n
 		return
 	}
-	_n, err = copyExtended(originSource, bufio.NewExtendedWriter(destination), bufio.NewExtendedReader(source), readCounters, writeCounters, full)
+	_n, err = copyExtended(originSource, bufio.NewExtendedWriter(destination), bufio.NewExtendedReader(source), readCounters, writeCounters, &sizing)
 	n += _n
 	return
 }
 
 // copyExtended is bufio.CopyExtended with copyAdaptive in place of
 // bufio.CopyExtendedWithPool.
-func copyExtended(originSource io.Reader, destination network.ExtendedWriter, source network.ExtendedReader, readCounters []network.CountFunc, writeCounters []network.CountFunc, full bool) (n int64, err error) {
+func copyExtended(originSource io.Reader, destination network.ExtendedWriter, source network.ExtendedReader, readCounters []network.CountFunc, writeCounters []network.CountFunc, sizing *readSizing) (n int64, err error) {
 	options := network.NewReadWaitOptions(source, destination)
 	if readWaiter, isReadWaiter := bufio.CreateReadWaiter(source); isReadWaiter {
 		needCopy := readWaiter.InitializeReadWaiter(options)
@@ -113,7 +120,7 @@ func copyExtended(originSource io.Reader, destination network.ExtendedWriter, so
 			return copyWait(originSource, destination, readWaiter, readCounters, writeCounters)
 		}
 	}
-	return copyAdaptive(originSource, destination, source, options, readCounters, writeCounters, full)
+	return copyAdaptive(originSource, destination, source, options, readCounters, writeCounters, sizing)
 }
 
 // copyWait is the read waiter loop of bufio.CopyExtended.
@@ -145,14 +152,14 @@ func copyWait(originSource io.Reader, destination network.ExtendedWriter, source
 
 // copyAdaptive is bufio.CopyExtendedWithPool that waits on a small buffer
 // while the source is idle (see copyConn).
-func copyAdaptive(originSource io.Reader, destination network.ExtendedWriter, source network.ExtendedReader, options network.ReadWaitOptions, readCounters []network.CountFunc, writeCounters []network.CountFunc, full bool) (n int64, err error) {
+func copyAdaptive(originSource io.Reader, destination network.ExtendedWriter, source network.ExtendedReader, options network.ReadWaitOptions, readCounters []network.CountFunc, writeCounters []network.CountFunc, sizing *readSizing) (n int64, err error) {
 	small := smallReadLen(options)
 	if small == 0 {
 		return bufio.CopyExtendedWithPool(originSource, destination, source, readCounters, writeCounters)
 	}
 	var notFirstTime bool
 	for {
-		buffer := newCopyBuffer(options, small, full)
+		buffer := sizing.newBuffer(options, small)
 		err = source.ReadBuffer(buffer)
 		if err != nil {
 			buffer.Release()
@@ -174,9 +181,7 @@ func copyAdaptive(originSource io.Reader, destination network.ExtendedWriter, so
 		n += int64(dataLen)
 		countAll(readCounters, writeCounters, dataLen)
 		notFirstTime = true
-		// A small read that filled its buffer: more is probably waiting.
-		// A full read no larger than a small one: the burst is over.
-		full = dataLen >= small
+		sizing.update(dataLen, small)
 	}
 }
 
@@ -184,7 +189,7 @@ func copyAdaptive(originSource io.Reader, destination network.ExtendedWriter, so
 // may still replace the reader or the writer, with the buffer choice of
 // copyAdaptive: Vision pads the first packets of every connection, and a
 // connection that goes quiet in that phase waits here.
-func copyOnce(destination io.Writer, source io.Reader, readCounters []network.CountFunc, writeCounters []network.CountFunc, full *bool) (n int64, err error) {
+func copyOnce(destination io.Writer, source io.Reader, readCounters []network.CountFunc, writeCounters []network.CountFunc, sizing *readSizing) (n int64, err error) {
 	options := network.NewReadWaitOptions(source, destination)
 	var buffer *buf.Buffer
 	calledWaitRead := false
@@ -196,11 +201,7 @@ func copyOnce(destination io.Writer, source io.Reader, readCounters []network.Co
 	}
 	small := smallReadLen(options)
 	if !calledWaitRead {
-		if small == 0 {
-			buffer = options.NewBuffer()
-		} else {
-			buffer = newCopyBuffer(options, small, *full)
-		}
+		buffer = sizing.newBuffer(options, small)
 		err = bufio.NewExtendedReader(source).ReadBuffer(buffer)
 		options.PostReturn(buffer)
 	}
@@ -218,7 +219,7 @@ func copyOnce(destination io.Writer, source io.Reader, readCounters []network.Co
 	}
 	countAll(readCounters, writeCounters, dataLen)
 	n = int64(dataLen)
-	*full = small == 0 || dataLen >= small
+	sizing.update(dataLen, small)
 	return
 }
 
@@ -235,11 +236,34 @@ func smallReadLen(options network.ReadWaitOptions) int {
 	return small
 }
 
-func newCopyBuffer(options network.ReadWaitOptions, small int, full bool) *buf.Buffer {
-	if full {
+// readSizing chooses the buffer of the next read of a copy.
+type readSizing struct {
+	full  bool // the next read goes into a full buffer
+	short int  // short reads in a row on full buffers
+}
+
+// newBuffer returns a full buffer, or a small one with room for small bytes
+// of data (0: no small buffer).
+func (s *readSizing) newBuffer(options network.ReadWaitOptions, small int) *buf.Buffer {
+	if s.full || small == 0 {
 		return options.NewBuffer()
 	}
 	return newSmallBuffer(options, small)
+}
+
+// update records a read of n bytes.
+func (s *readSizing) update(n, small int) {
+	switch {
+	case n >= small:
+		// a small read that filled its buffer: more is probably waiting
+		s.full, s.short = true, 0
+	case s.full:
+		// short reads in a row on a full buffer: the burst is over
+		s.short++
+		if s.short >= shortReadsToShrink {
+			s.full, s.short = false, 0
+		}
+	}
 }
 
 // newSmallBuffer is ReadWaitOptions.NewBuffer with room for size bytes of
