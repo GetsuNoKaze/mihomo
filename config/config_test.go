@@ -3,6 +3,8 @@ package config
 import (
 	"testing"
 
+	"github.com/metacubex/mihomo/log"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -79,6 +81,25 @@ func TestParseGeneralTCPConnectTimeout(t *testing.T) {
 			require.Equal(t, tt.want, general.TCPConnectTimeout)
 		})
 	}
+}
+
+func TestParseGeneralLogFormat(t *testing.T) {
+	raw, err := UnmarshalRawConfig([]byte("mode: rule\n"))
+	require.NoError(t, err)
+	general, err := parseGeneral(raw)
+	require.NoError(t, err)
+	require.Equal(t, log.TextFormat, general.LogFormat)
+	require.Equal(t, log.DefaultTimestampFormat, general.LogTimestampFormat)
+
+	raw, err = UnmarshalRawConfig([]byte("log-format: json\nlog-timestamp-format: \"2006-01-02T15:04:05Z07:00\"\n"))
+	require.NoError(t, err)
+	general, err = parseGeneral(raw)
+	require.NoError(t, err)
+	require.Equal(t, log.JSONFormat, general.LogFormat)
+	require.Equal(t, "2006-01-02T15:04:05Z07:00", general.LogTimestampFormat)
+
+	_, err = UnmarshalRawConfig([]byte("log-format: custom-text\n"))
+	require.Error(t, err)
 }
 
 func TestUnmarshalRawConfigTCPConnectTimeout(t *testing.T) {

@@ -42,6 +42,11 @@ geo-update-interval: 24 # 更新间隔，单位：小时
 # geosite-matcher: succinct
 
 log-level: debug # 日志等级 silent/error/warning/info/debug
+# Format of the lines printed to stdout: text (default, key=value as before) or json (one object per line
+# with time/level/msg, for Loki, ELK and the like). The controller's /logs stream is not affected.
+# log-format: text
+# Go time layout of the timestamp in both formats; empty means the default below
+# log-timestamp-format: "2006-01-02T15:04:05.000000000Z07:00"
 
 ipv6: true # 开启 IPv6 总开关，关闭阻断所有 IPv6 链接和屏蔽 DNS 请求 AAAA 记录
 

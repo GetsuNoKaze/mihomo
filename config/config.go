@@ -70,6 +70,9 @@ type General struct {
 	KeepAliveInterval int                     `json:"keep-alive-interval"`
 	DisableKeepAlive  bool                    `json:"disable-keep-alive"`
 	UserStats         bool                    `json:"user-stats"`
+
+	LogFormat          log.LogFormat `json:"log-format"`
+	LogTimestampFormat string        `json:"log-timestamp-format"`
 }
 
 // Inbound config
@@ -456,6 +459,8 @@ type RawConfig struct {
 	Mode                          T.TunnelMode            `yaml:"mode" json:"mode"`
 	UnifiedDelay                  bool                    `yaml:"unified-delay" json:"unified-delay"`
 	LogLevel                      log.LogLevel            `yaml:"log-level" json:"log-level"`
+	LogFormat                     log.LogFormat           `yaml:"log-format" json:"log-format"`
+	LogTimestampFormat            string                  `yaml:"log-timestamp-format" json:"log-timestamp-format"`
 	IPv6                          bool                    `yaml:"ipv6" json:"ipv6"`
 	ExternalController            string                  `yaml:"external-controller" json:"external-controller"`
 	ExternalControllerRoutingMark int                     `yaml:"external-controller-routing-mark" json:"external-controller-routing-mark"`
@@ -827,6 +832,10 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 	if err := T.ValidateTCPConnectTimeout(cfg.TCPConnectTimeout); err != nil {
 		return nil, fmt.Errorf("invalid tcp-connect-timeout: %w", err)
 	}
+	logTimestampFormat := cfg.LogTimestampFormat
+	if logTimestampFormat == "" {
+		logTimestampFormat = log.DefaultTimestampFormat
+	}
 	return &General{
 		Inbound: Inbound{
 			Port:              cfg.Port,
@@ -869,6 +878,9 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 		KeepAliveInterval: cfg.KeepAliveInterval,
 		DisableKeepAlive:  cfg.DisableKeepAlive,
 		UserStats:         cfg.UserStats,
+
+		LogFormat:          cfg.LogFormat,
+		LogTimestampFormat: logTimestampFormat,
 	}, nil
 }
 

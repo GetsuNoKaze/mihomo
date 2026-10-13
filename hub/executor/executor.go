@@ -89,6 +89,7 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	mux.Lock()
 	defer mux.Unlock()
 	log.SetLevel(cfg.General.LogLevel)
+	log.SetFormat(cfg.General.LogFormat, cfg.General.LogTimestampFormat)
 
 	tunnel.OnSuspend()
 
@@ -233,6 +234,7 @@ func GetGeneral() *config.General {
 		DisableKeepAlive:  keepalive.DisableKeepAlive(),
 		UserStats:         statistic.UserStatsEnabled(),
 	}
+	general.LogFormat, general.LogTimestampFormat = log.Format()
 
 	return general
 }
