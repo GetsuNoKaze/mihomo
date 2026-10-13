@@ -52,6 +52,7 @@ When the controller listens on a public address, use `external-controller-tls` a
 | `citrus_goroutines` | gauge | Goroutines. |
 | `citrus_heap_bytes` | gauge | Heap objects, live and not yet swept. |
 | `citrus_resident_memory_bytes` | gauge | Resident memory (RSS). |
+| `citrus_memory_limit_bytes` | gauge | Soft memory limit of the Go runtime (`GOMEMLIMIT`), 0 when unlimited. |
 | `citrus_open_fds`, `citrus_max_fds` | gauge | Open file descriptors and their limit (Linux only). |
 | `citrus_gc_cycles_total` | counter | Completed GC cycles. |
 | `citrus_gc_pause_seconds` | histogram | GC stop-the-world pauses, folded from `runtime/metrics` (the sum is an estimate). |

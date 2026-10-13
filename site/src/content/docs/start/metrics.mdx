@@ -52,6 +52,7 @@ scrape_configs:
 | `citrus_goroutines` | gauge | Горутины. |
 | `citrus_heap_bytes` | gauge | Объекты кучи, живые и ещё не подметённые. |
 | `citrus_resident_memory_bytes` | gauge | Резидентная память (RSS). |
+| `citrus_memory_limit_bytes` | gauge | Мягкий лимит памяти рантайма Go (`GOMEMLIMIT`), 0 — без лимита. |
 | `citrus_open_fds`, `citrus_max_fds` | gauge | Открытые файловые дескрипторы и их лимит (только Linux). |
 | `citrus_gc_cycles_total` | counter | Завершённые циклы GC. |
 | `citrus_gc_pause_seconds` | histogram | Паузы GC с остановкой мира, свёрнутые из `runtime/metrics` (сумма — оценка). |
