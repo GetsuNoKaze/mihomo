@@ -46,7 +46,7 @@ type Hysteria2RealmServer struct {
 }
 
 func NewHysteria2RealmServer(options *Hysteria2RealmServerOption) (*Hysteria2RealmServer, error) {
-	base, err := NewBase(&options.BaseOption)
+	base, err := newStreamBase(&options.BaseOption)
 	if err != nil {
 		return nil, err
 	}
