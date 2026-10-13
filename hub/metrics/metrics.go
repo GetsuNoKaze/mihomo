@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"runtime"
+	"runtime/debug"
 	rtmetrics "runtime/metrics"
 	"sort"
 	"sync"
@@ -120,6 +121,18 @@ func runtimeSamples() []rtmetrics.Sample {
 	return samples
 }
 
+// MemoryLimit returns the soft memory limit the Go runtime enforces, set by
+// GOMEMLIMIT or debug.SetMemoryLimit, and 0 when there is none: the runtime
+// spells "unlimited" as math.MaxInt64.
+func MemoryLimit() uint64 {
+	// a negative argument only reads the limit
+	limit := debug.SetMemoryLimit(-1)
+	if limit == math.MaxInt64 || limit < 0 {
+		return 0
+	}
+	return uint64(limit)
+}
+
 // gcPauseBuckets are the upper bounds of citrus_gc_pause_seconds.
 var gcPauseBuckets = []float64{0.00001, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 1}
 
@@ -152,6 +165,8 @@ func writeProcess(w writer) {
 
 	w.family("citrus_resident_memory_bytes", "gauge", "Resident memory of the process in bytes.")
 	w.int("citrus_resident_memory_bytes", int64(statistic.DefaultManager.Memory()))
+	w.family("citrus_memory_limit_bytes", "gauge", "Soft memory limit of the Go runtime (GOMEMLIMIT), 0 when unlimited.")
+	w.int("citrus_memory_limit_bytes", int64(MemoryLimit()))
 
 	if open, max, ok := openFDs(); ok {
 		w.family("citrus_open_fds", "gauge", "Number of open file descriptors.")

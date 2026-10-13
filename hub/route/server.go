@@ -55,7 +55,7 @@ type Traffic struct {
 
 type Memory struct {
 	Inuse   uint64 `json:"inuse"`
-	OSLimit uint64 `json:"oslimit"` // maybe we need it in the future
+	OSLimit uint64 `json:"oslimit"` // the Go runtime memory limit, 0 when unlimited
 }
 
 type Config struct {
@@ -458,7 +458,7 @@ func memory(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := json.NewEncoder(buf).Encode(Memory{
 			Inuse:   inuse,
-			OSLimit: 0,
+			OSLimit: metrics.MemoryLimit(), // read every tick, the limit can change at runtime
 		}); err != nil {
 			break
 		}

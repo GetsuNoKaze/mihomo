@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/netip"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"testing"
@@ -363,4 +365,20 @@ func TestProbes(t *testing.T) {
 	assert.True(t, ok)
 	ok, _ = Ready()
 	assert.True(t, ok)
+}
+
+func TestMemoryLimit(t *testing.T) {
+	original := debug.SetMemoryLimit(-1)
+	t.Cleanup(func() { debug.SetMemoryLimit(original) })
+
+	debug.SetMemoryLimit(math.MaxInt64)
+	assert.Equal(t, uint64(0), MemoryLimit(), "unlimited")
+	_, s := render(t, Options{Enable: true})
+	assert.Equal(t, float64(0), s["citrus_memory_limit_bytes"])
+
+	debug.SetMemoryLimit(64 << 20)
+	assert.Equal(t, uint64(64<<20), MemoryLimit())
+	assert.Equal(t, int64(64<<20), debug.SetMemoryLimit(-1), "reading does not change the limit")
+	_, s = render(t, Options{Enable: true})
+	assert.Equal(t, float64(64<<20), s["citrus_memory_limit_bytes"])
 }

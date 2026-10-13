@@ -118,6 +118,14 @@ func (t *Tuic) dial(ctx context.Context) (quicConn *quic.Conn, err error) {
 	return quicConn, nil
 }
 
+// Close implements C.ProxyAdapter
+func (t *Tuic) Close() error {
+	if t.client != nil {
+		return t.client.Close()
+	}
+	return nil
+}
+
 // ProxyInfo implements C.ProxyAdapter
 func (t *Tuic) ProxyInfo() C.ProxyInfo {
 	info := t.Base.ProxyInfo()
