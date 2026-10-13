@@ -16,6 +16,7 @@ import (
 	"github.com/metacubex/mihomo/adapter"
 	"github.com/metacubex/mihomo/adapter/outbound"
 	"github.com/metacubex/mihomo/common/utils"
+	"github.com/metacubex/mihomo/component/dialer"
 	C "github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/listener"
 	"github.com/metacubex/mihomo/listener/inbound"
@@ -26,7 +27,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// startEchoServer echoes every connection back.
+// startEchoServer echoes every connection back. It resets the connections
+// it closes (see abortiveDialer): the DIRECT side, which closes first, then
+// leaves no TIME_WAIT behind either.
 func startEchoServer(t *testing.T) netip.AddrPort {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -36,6 +39,9 @@ func startEchoServer(t *testing.T) netip.AddrPort {
 			c, err := ln.Accept()
 			if err != nil {
 				return
+			}
+			if tc, ok := c.(*net.TCPConn); ok {
+				_ = tc.SetLinger(0)
 			}
 			go func() {
 				defer c.Close()
@@ -80,6 +86,31 @@ func ping(conn net.Conn) error {
 	}
 	return nil
 }
+
+// abortiveDialer dials the TCP connections of the test clients with
+// SO_LINGER 0: closing one resets it instead of leaving it in TIME_WAIT. A
+// run of TestInboundRuntimeUsersConcurrent opens about two thousand loopback
+// connections (the clients' and DIRECT's), and with -count=N their TIME_WAITs
+// use up the ephemeral ports: on Windows the dials then fail with
+// WSAEADDRINUSE, which the test would count as refused sessions.
+type abortiveDialer struct{}
+
+func (abortiveDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	c, err := (&net.Dialer{}).DialContext(ctx, network, address)
+	if err != nil {
+		return nil, err
+	}
+	if tc, ok := c.(*net.TCPConn); ok {
+		_ = tc.SetLinger(0)
+	}
+	return c, nil
+}
+
+func (abortiveDialer) ListenPacket(ctx context.Context, network, address string, rAddrPort netip.AddrPort) (net.PacketConn, error) {
+	return dialer.NewDialer().ListenPacket(ctx, network, address, rAddrPort)
+}
+
+var testBasic = outbound.BasicOption{DialerForAPI: abortiveDialer{}}
 
 // runtimeUsersProto builds an inbound of one protocol and clients for it.
 type runtimeUsersProto struct {
@@ -126,7 +157,7 @@ func runtimeUsersProtos() []runtimeUsersProto {
 				return in
 			},
 			newOut: func(t *testing.T, addr netip.AddrPort, user C.InboundUser) C.ProxyAdapter {
-				out, err := outbound.NewVless(outbound.VlessOption{Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), UUID: user.Secret})
+				out, err := outbound.NewVless(outbound.VlessOption{BasicOption: testBasic, Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), UUID: user.Secret})
 				require.NoError(t, err)
 				return out
 			},
@@ -144,7 +175,7 @@ func runtimeUsersProtos() []runtimeUsersProto {
 				return in
 			},
 			newOut: func(t *testing.T, addr netip.AddrPort, user C.InboundUser) C.ProxyAdapter {
-				out, err := outbound.NewTrojan(outbound.TrojanOption{Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), Password: user.Secret, Fingerprint: tlsFingerprint})
+				out, err := outbound.NewTrojan(outbound.TrojanOption{BasicOption: testBasic, Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), Password: user.Secret, Fingerprint: tlsFingerprint})
 				require.NoError(t, err)
 				return out
 			},
@@ -158,7 +189,7 @@ func runtimeUsersProtos() []runtimeUsersProto {
 				return in
 			},
 			newOut: func(t *testing.T, addr netip.AddrPort, user C.InboundUser) C.ProxyAdapter {
-				out, err := outbound.NewAnyTLS(outbound.AnyTLSOption{Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), Password: user.Secret, Fingerprint: tlsFingerprint})
+				out, err := outbound.NewAnyTLS(outbound.AnyTLSOption{BasicOption: testBasic, Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), Password: user.Secret, Fingerprint: tlsFingerprint})
 				require.NoError(t, err)
 				return out
 			},
@@ -188,7 +219,7 @@ func runtimeUsersProtos() []runtimeUsersProto {
 				return in
 			},
 			newOut: func(t *testing.T, addr netip.AddrPort, user C.InboundUser) C.ProxyAdapter {
-				out, err := outbound.NewTrustTunnel(outbound.TrustTunnelOption{Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), UserName: user.Name, Password: user.Secret, Fingerprint: tlsFingerprint})
+				out, err := outbound.NewTrustTunnel(outbound.TrustTunnelOption{BasicOption: testBasic, Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), UserName: user.Name, Password: user.Secret, Fingerprint: tlsFingerprint})
 				require.NoError(t, err)
 				return out
 			},
@@ -208,7 +239,7 @@ func runtimeUsersProtos() []runtimeUsersProto {
 				return in
 			},
 			newOut: func(t *testing.T, addr netip.AddrPort, user C.InboundUser) C.ProxyAdapter {
-				out, err := outbound.NewShadowSocks(outbound.ShadowSocksOption{Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), Cipher: "2022-blake3-aes-128-gcm", Password: runtimeUsersIPSK + ":" + user.Secret})
+				out, err := outbound.NewShadowSocks(outbound.ShadowSocksOption{BasicOption: testBasic, Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), Cipher: "2022-blake3-aes-128-gcm", Password: runtimeUsersIPSK + ":" + user.Secret})
 				require.NoError(t, err)
 				return out
 			},
@@ -222,7 +253,7 @@ func runtimeUsersProtos() []runtimeUsersProto {
 				return in
 			},
 			newOut: func(t *testing.T, addr netip.AddrPort, user C.InboundUser) C.ProxyAdapter {
-				out, err := outbound.NewSocks5(outbound.Socks5Option{Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), UserName: user.Name, Password: user.Secret})
+				out, err := outbound.NewSocks5(outbound.Socks5Option{BasicOption: testBasic, Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), UserName: user.Name, Password: user.Secret})
 				require.NoError(t, err)
 				return out
 			},
@@ -236,7 +267,7 @@ func runtimeUsersProtos() []runtimeUsersProto {
 				return in
 			},
 			newOut: func(t *testing.T, addr netip.AddrPort, user C.InboundUser) C.ProxyAdapter {
-				out, err := outbound.NewHttp(outbound.HttpOption{Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), UserName: user.Name, Password: user.Secret})
+				out, err := outbound.NewHttp(outbound.HttpOption{BasicOption: testBasic, Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), UserName: user.Name, Password: user.Secret})
 				require.NoError(t, err)
 				return out
 			},
@@ -250,7 +281,7 @@ func runtimeUsersProtos() []runtimeUsersProto {
 				return in
 			},
 			newOut: func(t *testing.T, addr netip.AddrPort, user C.InboundUser) C.ProxyAdapter {
-				out, err := outbound.NewSocks5(outbound.Socks5Option{Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), UserName: user.Name, Password: user.Secret})
+				out, err := outbound.NewSocks5(outbound.Socks5Option{BasicOption: testBasic, Name: "out", Server: addr.Addr().String(), Port: int(addr.Port()), UserName: user.Name, Password: user.Secret})
 				require.NoError(t, err)
 				return out
 			},
