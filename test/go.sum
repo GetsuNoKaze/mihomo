@@ -59,8 +59,8 @@ github.com/gaukas/godicttls v0.0.4 h1:NlRaXb3J6hAnTmWdsEKb9bcSBD6BvcIjdGdeb0zfXb
 github.com/gaukas/godicttls v0.0.4/go.mod h1:l6EenT4TLWgTdwslVb4sEMOCf7Bv0JAK67deKr9/NCI=
 github.com/getmikan/http v0.1.8-citrus.2 h1:eBNDiHT/4KQMIhEZ+T81w4MrMo00gwMPm7jaY8GJYuc=
 github.com/getmikan/http v0.1.8-citrus.2/go.mod h1:Nxx0zZAo2AhRfanyL+fmmK6ACMtVsfpwIl1aFAik2Eg=
-github.com/getmikan/utls v1.8.8-citrus.1 h1:0khgh+/PKgMHVnR7AsRxL7cQAeY7tLJVJhhZsGdrXME=
-github.com/getmikan/utls v1.8.8-citrus.1/go.mod h1:gxkPJpm+5l3rStQM59z70up244h0tv4TlSkB5dlakjU=
+github.com/getmikan/utls v1.8.8-citrus.2 h1:5Ww/z3HEM83dSpMWNDJ5/U8yEh1/kcwCHo+5mZcVM2Q=
+github.com/getmikan/utls v1.8.8-citrus.2/go.mod h1:gxkPJpm+5l3rStQM59z70up244h0tv4TlSkB5dlakjU=
 github.com/github/fakeca v0.1.0 h1:Km/MVOFvclqxPM9dZBC4+QE564nU4gz4iZ0D9pMw28I=
 github.com/go-ole/go-ole v1.3.0 h1:Dt6ye7+vXGIKZ7Xtk4s6/xVdGDQynvom7xCFEdWr6uE=
 github.com/go-ole/go-ole v1.3.0/go.mod h1:5LS6F96DhAwUc7C+1HLexzMXY1xGRSryjyPPKW6zv78=

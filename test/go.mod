@@ -156,6 +156,6 @@ require (
 	gotest.tools/v3 v3.5.2 // indirect
 )
 
-replace github.com/metacubex/utls => github.com/getmikan/utls v1.8.8-citrus.1
+replace github.com/metacubex/utls => github.com/getmikan/utls v1.8.8-citrus.2
 
 replace github.com/metacubex/http => github.com/getmikan/http v0.1.8-citrus.2
