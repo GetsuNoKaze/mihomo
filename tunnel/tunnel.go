@@ -195,6 +195,8 @@ func NatTable() C.NatTable {
 
 // Rules return all rules
 func Rules() []C.Rule {
+	configMux.RLock()
+	defer configMux.RUnlock()
 	return rules
 }
 
@@ -208,7 +210,54 @@ func UpdateRules(newRules []C.Rule, newSubRule map[string][]C.Rule, rp map[strin
 	rules = newRules
 	ruleProviders = rp
 	subRules = newSubRule
+	ruleGeneration++
 	configMux.Unlock()
+}
+
+// ErrRulesChanged is returned by ReplaceRules when the config was reloaded or
+// the proxies were replaced after the snapshot the new rules were parsed against.
+var ErrRulesChanged = errors.New("the config changed while the rules were parsed")
+
+// ruleGeneration counts the replacements of everything the top level rules are
+// resolved against (proxies, rule providers, sub-rules). Guarded by configMux.
+var ruleGeneration uint64
+
+// RuleSnapshot is a consistent view of what the top level rules resolve against.
+// The maps are shared with the tunnel and must not be modified.
+type RuleSnapshot struct {
+	Proxies       map[string]C.Proxy
+	Providers     map[string]P.ProxyProvider
+	RuleProviders map[string]P.RuleProvider
+	SubRules      map[string][]C.Rule
+
+	generation uint64
+}
+
+// SnapshotRules returns the proxies, providers, rule providers and sub-rules,
+// read together under the config lock.
+func SnapshotRules() RuleSnapshot {
+	configMux.RLock()
+	defer configMux.RUnlock()
+	return RuleSnapshot{
+		Proxies:       proxies,
+		Providers:     providers,
+		RuleProviders: ruleProviders,
+		SubRules:      subRules,
+		generation:    ruleGeneration,
+	}
+}
+
+// ReplaceRules swaps the top level rules for newRules, parsed against snap.
+// Sub-rules and rule providers are kept. If the config changed since snap was
+// taken, nothing is replaced and ErrRulesChanged is returned.
+func ReplaceRules(snap RuleSnapshot, newRules []C.Rule) error {
+	configMux.Lock()
+	defer configMux.Unlock()
+	if snap.generation != ruleGeneration {
+		return ErrRulesChanged
+	}
+	rules = newRules
+	return nil
 }
 
 // Proxies return all proxies
@@ -231,6 +280,7 @@ func UpdateProxies(newProxies map[string]C.Proxy, newProviders map[string]P.Prox
 	configMux.Lock()
 	proxies = newProxies
 	providers = newProviders
+	ruleGeneration++
 	configMux.Unlock()
 }
 
