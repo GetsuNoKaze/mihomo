@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/metacubex/tls"
 )
 
 const (
@@ -80,6 +82,12 @@ type ClientConfig struct {
 	// FallbackCipher is used when the server does not support cipher
 	// negotiation (OpenVPN --data-ciphers-fallback).
 	FallbackCipher string
+
+	// TLSVersionMin is the lowest TLS version of the control channel, "1.2"
+	// or "1.3" (OpenVPN --tls-version-min). Empty keeps the crypto/tls
+	// client default, which is TLS 1.2 as well.
+	TLSVersionMin string
+	tlsMinVersion uint16
 }
 
 // DataCipherKeyLength returns the key size for the negotiated data cipher.
@@ -241,6 +249,11 @@ func (c *ClientConfig) Prepare() error {
 	if err := c.ValidateInstallScriptSubset(); err != nil {
 		return err
 	}
+	minVersion, err := parseTLSVersionMin(c.TLSVersionMin)
+	if err != nil {
+		return err
+	}
+	c.tlsMinVersion = minVersion
 	if len(bytes.TrimSpace(c.TLSAuth)) > 0 {
 		key, err := DecodeStaticKey(c.TLSAuth)
 		if err != nil {
@@ -330,6 +343,21 @@ func (c *ClientConfig) ValidateInstallScriptSubset() error {
 		return errors.New("openvpn transition window must be non-negative")
 	}
 	return nil
+}
+
+// parseTLSVersionMin maps tls-version-min to a crypto/tls version, 0 for the
+// default. Versions below 1.2 are refused rather than silently enabled.
+func parseTLSVersionMin(version string) (uint16, error) {
+	switch strings.TrimSpace(version) {
+	case "":
+		return 0, nil
+	case "1.2":
+		return tls.VersionTLS12, nil
+	case "1.3":
+		return tls.VersionTLS13, nil
+	default:
+		return 0, fmt.Errorf("unsupported openvpn tls-version-min %q: only 1.2 and 1.3 are supported", version)
+	}
 }
 
 func DecodeStaticKey(block []byte) ([]byte, error) {
