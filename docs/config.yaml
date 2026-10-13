@@ -1192,6 +1192,7 @@ proxies: # socks5
     # max-stream-receive-window： 8388608
     # initial-connection-receive-window： 20971520
     # max-connection-receive-window： 20971520
+    # disable-mtu-discovery: false
 
   # wireguard
   - name: "wg"
@@ -1436,6 +1437,7 @@ proxies: # socks5
     # dns: [ 1.1.1.1, 8.8.8.8 ] # 仅在 remote-dns-resolve 为 true 时生效
     # congestion-controller: bbr # 默认不开启
     # handshake-timeout: 30 # 单位为秒；配置后握手时不受外层连接超时影响；默认值为 0，表示仅使用外层连接超时
+    # disable-mtu-discovery: false
 
   # masque-h3-l4proxy
   - name: "masque-h3-l4proxy"
@@ -1452,6 +1454,7 @@ proxies: # socks5
     # dns: [ tls://1.1.1.1, tls://1.0.0.1 ] # 仅在 remote-dns-resolve 为 true 时生效
     # congestion-controller: bbr # 默认不开启
     # handshake-timeout: 30 # 单位为秒；配置后握手时不受外层连接超时影响；默认值为 0，表示仅使用外层连接超时
+    # disable-mtu-discovery: false
 
   # masque-h2
   - name: "masque-h2"
