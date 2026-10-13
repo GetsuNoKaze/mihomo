@@ -383,6 +383,8 @@ dns:
 
   fake-ip-range: 198.18.0.1/16 # fake-ip 池设置
   # fake-ip-range6: fdfe:dcba:9876::1/64 # fake-ip6 池设置
+  # Names whose labels hold bytes no host name can (a dot, a space, a non-ASCII byte: \. \032 \152 in logs)
+  # never get a fake IP, they are resolved as usual and usually end in NXDOMAIN
 
   # 配置不使用 fake-ip 的域名
   fake-ip-filter:
