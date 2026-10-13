@@ -2,6 +2,7 @@ package route
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 
 	"github.com/metacubex/mihomo/component/profile/cachefile"
@@ -10,6 +11,9 @@ import (
 	"github.com/metacubex/chi/render"
 	"github.com/metacubex/http"
 )
+
+// maxStoragePayload is the largest value accepted by PUT /storage/{key}.
+const maxStoragePayload = 1024 * 1024
 
 func storageRouter() http.Handler {
 	r := chi.NewRouter()
@@ -32,8 +36,15 @@ func getStorage(w http.ResponseWriter, r *http.Request) {
 
 func setStorage(w http.ResponseWriter, r *http.Request) {
 	key := getEscapeParam(r, "key")
-	data, err := io.ReadAll(r.Body)
+	// stop reading at the limit instead of buffering a body of any size
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxStoragePayload))
 	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			render.Status(r, http.StatusRequestEntityTooLarge)
+			render.JSON(w, r, newError("payload exceeds 1MB limit"))
+			return
+		}
 		render.Status(r, http.StatusBadRequest)
 		render.JSON(w, r, newError(err.Error()))
 		return
@@ -41,11 +52,6 @@ func setStorage(w http.ResponseWriter, r *http.Request) {
 	if !json.Valid(data) {
 		render.Status(r, http.StatusBadRequest)
 		render.JSON(w, r, ErrBadRequest)
-		return
-	}
-	if len(data) > 1024*1024 {
-		render.Status(r, http.StatusRequestEntityTooLarge)
-		render.JSON(w, r, newError("payload exceeds 1MB limit"))
 		return
 	}
 	cachefile.Cache().SetStorage(key, data)

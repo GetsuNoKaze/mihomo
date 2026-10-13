@@ -329,7 +329,10 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 			socks["port"] = portStr
 			socks["username"] = username
 			socks["password"] = password
-			socks["skip-cert-verify"] = true
+			// verify the certificate unless the link explicitly asks not to
+			if linkAllowsInsecure(link.Query()) {
+				socks["skip-cert-verify"] = true
+			}
 			if scheme == "https" {
 				socks["tls"] = true
 			}

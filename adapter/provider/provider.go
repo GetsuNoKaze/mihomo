@@ -11,6 +11,7 @@ import (
 
 	"github.com/metacubex/mihomo/adapter"
 	"github.com/metacubex/mihomo/common/convert"
+	"github.com/metacubex/mihomo/common/regexp2x"
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/common/yaml"
 	"github.com/metacubex/mihomo/component/age"
@@ -350,7 +351,7 @@ func NewProxiesParser(pdName string, tunnel C.Tunnel, filter string, excludeFilt
 	var excludeFilterRegs []*regexp2.Regexp
 	if excludeFilter != "" {
 		for _, excludeFilter := range strings.Split(excludeFilter, "`") {
-			excludeFilterReg, err := regexp2.Compile(excludeFilter, regexp2.None)
+			excludeFilterReg, err := regexp2x.Compile(excludeFilter, regexp2.None)
 			if err != nil {
 				return nil, fmt.Errorf("invalid excludeFilter regex: %w", err)
 			}
@@ -360,11 +361,16 @@ func NewProxiesParser(pdName string, tunnel C.Tunnel, filter string, excludeFilt
 
 	var filterRegs []*regexp2.Regexp
 	for _, filter := range strings.Split(filter, "`") {
-		filterReg, err := regexp2.Compile(filter, regexp2.None)
+		filterReg, err := regexp2x.Compile(filter, regexp2.None)
 		if err != nil {
 			return nil, fmt.Errorf("invalid filter regex: %w", err)
 		}
 		filterRegs = append(filterRegs, filterReg)
+	}
+
+	// override.proxy-name patterns are decoded from the configuration
+	for _, expr := range override.ProxyName {
+		regexp2x.SetTimeout(expr.Pattern)
 	}
 
 	if ageSecretKey != "" {
@@ -424,13 +430,13 @@ func NewProxiesParser(pdName string, tunnel C.Tunnel, filter string, excludeFilt
 				}
 				if len(excludeFilterRegs) > 0 {
 					for _, excludeFilterReg := range excludeFilterRegs {
-						if mat, _ := excludeFilterReg.MatchString(name); mat {
+						if regexp2x.MatchString(excludeFilterReg, name) {
 							continue LOOP1
 						}
 					}
 				}
 				if len(filter) > 0 {
-					if mat, _ := filterReg.MatchString(name); !mat {
+					if !regexp2x.MatchString(filterReg, name) {
 						continue
 					}
 				}
