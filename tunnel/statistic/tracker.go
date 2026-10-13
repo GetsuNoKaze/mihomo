@@ -174,6 +174,49 @@ type trackerReader struct{ t *tcpTracker }
 func (r trackerReader) Read(b []byte) (int, error)          { return r.t.Read(b) }
 func (r trackerReader) ReadBuffer(buffer *buf.Buffer) error { return r.t.ReadBuffer(buffer) }
 
+// CreateReadWaiter keeps the read waiter of the connection (a socket waits
+// for data before it takes a buffer) for a user with a limit: the reader
+// counts and throttles what each wait returns, as Read does. Without it the
+// copy reads through Read and holds a full pool buffer while the remote is
+// silent, for as long as the connection stays open.
+func (r trackerReader) CreateReadWaiter() (N.ReadWaiter, bool) {
+	inner, counters := N.UnwrapCountReader(r.t.Conn, nil)
+	if _, isCached := inner.(N.CachedReader); isCached {
+		return nil, false // the copy reads the cached data through Read
+	}
+	waiter, ok := N.CreateReadWaiter(inner)
+	if !ok {
+		return nil, false
+	}
+	return &trackerReadWaiter{t: r.t, waiter: waiter, counters: counters}, true
+}
+
+type trackerReadWaiter struct {
+	t        *tcpTracker
+	waiter   N.ReadWaiter
+	counters []N.CountFunc
+}
+
+func (w *trackerReadWaiter) InitializeReadWaiter(options N.ReadWaitOptions) (needCopy bool) {
+	return w.waiter.InitializeReadWaiter(options)
+}
+
+func (w *trackerReadWaiter) WaitReadBuffer() (*buf.Buffer, error) {
+	if overQuota(w.t.user) {
+		return nil, ErrQuotaExceeded
+	}
+	buffer, err := w.waiter.WaitReadBuffer()
+	if err != nil {
+		return nil, err
+	}
+	n := int64(buffer.Len())
+	for _, counter := range w.counters {
+		counter(n)
+	}
+	w.t.countDown(n)
+	return buffer, nil
+}
+
 type trackerWriter struct{ t *tcpTracker }
 
 func (w trackerWriter) Write(b []byte) (int, error)          { return w.t.Write(b) }

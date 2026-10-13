@@ -211,3 +211,50 @@ func TestTrackerQuotaStopsTransferAtOnce(t *testing.T) {
 	assert.LessOrEqual(t, s.Up+s.Down, int64(300_000+256<<10), "overshoot past the quota is at most a buffer or two")
 	assert.Less(t, s.Down, int64(5_000_000))
 }
+
+// TestTrackerReadWaiterUnderLimit checks that a user with a limit keeps the
+// read waiter of a socket (no buffer while the remote is silent), and that
+// the waiter counts what it reads.
+func TestTrackerReadWaiterUnderLimit(t *testing.T) {
+	inbound := fmt.Sprintf("tracker-read-waiter-test-%d", time.Now().UnixNano())
+	setLimit(t, statistic.UserLimit{Inbound: inbound, User: "alice", SpeedDown: 1 << 30, Quota: 1 << 40})
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, _ := ln.Accept()
+		accepted <- c
+	}()
+	raw, err := net.Dial("tcp", ln.Addr().String())
+	require.NoError(t, err)
+	var tracker net.Conn = statistic.NewTCPTracker(outbound.NewConn(raw, outbound.NewDirect()), statistic.DefaultManager,
+		userMetadata(inbound, "alice", "10.2.2.5"), nil, 0, 0, true)
+	defer tracker.Close()
+	remote := <-accepted
+	require.NotNil(t, remote)
+	defer remote.Close()
+
+	r, rc := tracker.(interface {
+		UnwrapReader() (io.Reader, []N.CountFunc)
+	}).UnwrapReader()
+	require.Empty(t, rc)
+	_, ok := r.(interface{ CreateReadWaiter() (N.ReadWaiter, bool) })
+	require.True(t, ok, "the limited reader offers a read waiter")
+	waiter, ok := N.CreateReadWaiter(r)
+	require.True(t, ok, "the socket under the tracker has a read waiter")
+	waiter.InitializeReadWaiter(N.NewReadWaitOptions(r, nil))
+
+	_, err = remote.Write(make([]byte, 1234))
+	require.NoError(t, err)
+	var got int
+	for got < 1234 {
+		buffer, err := waiter.WaitReadBuffer()
+		require.NoError(t, err)
+		got += buffer.Len()
+		buffer.Release()
+	}
+	assert.Equal(t, int64(1234), userStat(t, inbound, "alice").Down)
+	assert.Equal(t, int64(1234), tracker.(statistic.Tracker).Info().DownloadTotal.Load())
+}
