@@ -9,7 +9,8 @@ import (
 	"github.com/metacubex/sing/common/network"
 )
 
-// copyCounted is bufio.Copy that keeps the read counters of source exact.
+// copyCounted is copyConn (bufio.Copy) that keeps the read counters of source
+// exact.
 //
 // A traffic tracker (tunnel/statistic) lets the copy unwrap it down to the
 // remote connection and hands over counters (per-connection, global and
@@ -31,7 +32,7 @@ func copyCounted(destination io.Writer, source io.Reader) (int64, error) {
 			counters: counters,
 		}
 	}
-	return bufio.Copy(destination, source)
+	return copyConn(destination, source)
 }
 
 // countOnFailWriter calls counters with the size of every write that fails;
