@@ -258,8 +258,22 @@ func runtimeUsersProtos() []runtimeUsersProto {
 	}
 }
 
+// setupRuntimeTunnel routes everything DIRECT, through a DIRECT without the
+// loopback detector. The detector refuses an inbound connection whose source
+// address is the local address of a DIRECT connection, taking it for DIRECT
+// dialing back into the core. Over loopback, Linux hands the same ephemeral
+// port to connections towards different destinations, so a client session
+// to the inbound regularly gets the source port of a live DIRECT connection
+// to the echo server and is refused: a false loop that has nothing to do with
+// the users under test.
 func setupRuntimeTunnel() {
-	tunnel.UpdateProxies(map[string]C.Proxy{"DIRECT": adapter.NewProxy(outbound.NewDirect())}, nil)
+	direct := &outbound.Direct{Base: outbound.NewBase(outbound.BaseOption{
+		Name:   "DIRECT",
+		Type:   C.Direct,
+		UDP:    true,
+		Prefer: C.DualStack,
+	})}
+	tunnel.UpdateProxies(map[string]C.Proxy{"DIRECT": adapter.NewProxy(direct)}, nil)
 	tunnel.OnRunning()
 }
 
