@@ -39,7 +39,9 @@ type Session struct {
 	idleSince time.Time
 	padding   *atomic.Pointer[padding.PaddingFactory]
 
-	peerVersion byte
+	// peerVersion is written by recvLoop when the peer's settings arrive and
+	// read by OpenStream and the handshake reports on other goroutines.
+	peerVersion atomic.Uint32
 
 	// client
 	isClient       bool
@@ -131,16 +133,19 @@ func (s *Session) Close() error {
 	}
 }
 
-// OpenStream is used to create a new stream for CLIENT
-func (s *Session) OpenStream() (*Stream, error) {
+// OpenStream is used to create a new stream for CLIENT. dieHook, if not nil,
+// runs once when the stream dies; it is installed before the stream becomes
+// visible to the session, which may close it from recvLoop at any time.
+func (s *Session) OpenStream(dieHook func()) (*Stream, error) {
 	if s.IsClosed() {
 		return nil, io.ErrClosedPipe
 	}
 
 	sid := s.streamId.Add(1)
 	stream := newStream(sid, s)
+	stream.dieHook = dieHook
 
-	if sid >= 2 && s.peerVersion >= 2 {
+	if sid >= 2 && s.peerVersion.Load() >= 2 {
 		s.synDoneLock.Lock()
 		if s.synDone != nil {
 			s.synDone()
@@ -155,7 +160,9 @@ func (s *Session) OpenStream() (*Stream, error) {
 		return nil, err
 	}
 
+	s.connLock.Lock()
 	s.buffering = false // proxy Write it's SocksAddr to flush the buffer
+	s.connLock.Unlock()
 
 	s.streamLock.Lock()
 	defer s.streamLock.Unlock()
@@ -284,7 +291,7 @@ func (s *Session) recvLoop() error {
 						}
 						// check client's version
 						if v, err := strconv.Atoi(m["v"]); err == nil && v >= 2 {
-							s.peerVersion = byte(v)
+							s.peerVersion.Store(uint32(v))
 							// send cmdServerSettings
 							f := newFrame(cmdServerSettings, 0)
 							f.data = util.StringMap{
@@ -345,7 +352,7 @@ func (s *Session) recvLoop() error {
 						// check server's version
 						m := util.StringMapFromBytes(buffer)
 						if v, err := strconv.Atoi(m["v"]); err == nil {
-							s.peerVersion = byte(v)
+							s.peerVersion.Store(uint32(v))
 						}
 					}
 					pool.Put(buffer)

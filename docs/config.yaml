@@ -42,6 +42,11 @@ geo-update-interval: 24 # 更新间隔，单位：小时
 # geosite-matcher: succinct
 
 log-level: debug # 日志等级 silent/error/warning/info/debug
+# Format of the lines printed to stdout: text (default, key=value as before) or json (one object per line
+# with time/level/msg, for Loki, ELK and the like). The controller's /logs stream is not affected.
+# log-format: text
+# Go time layout of the timestamp in both formats; empty means the default below
+# log-timestamp-format: "2006-01-02T15:04:05.000000000Z07:00"
 
 ipv6: true # 开启 IPv6 总开关，关闭阻断所有 IPv6 链接和屏蔽 DNS 请求 AAAA 记录
 
@@ -119,6 +124,25 @@ external-controller-routing-mark: 0
 # user-limits:
 #   - { inbound: vless-in, user: alice, speed-up: 10M, speed-down: 80Mbps, max-conns: 64, max-ips: 3, quota: 100G, expire-at: 1767225600 }
 #   - { inbound: vless-in, user: "*", speed-down: 20M, max-ips: 2, quota: 50G }
+
+# Prometheus 指标：GET /metrics（在 external-controller 上，需要 secret，Bearer 认证）。
+# 默认关闭；开启后按入站统计流量。per-user 输出每个入站用户的序列（基数高，默认关闭）。
+# Prometheus metrics: GET /metrics on the external controller, behind the
+# secret (bearer authorization). Off by default; when on, the traffic is also
+# counted per inbound. per-user adds the series of every inbound user (high
+# cardinality, off by default); they are cumulative and not affected by
+# GET /traffic/users?reset=true.
+# metrics:
+#   enable: true
+#   per-user: false
+
+# 健康检查 GET /healthz（隧道运行中）与 GET /readyz（配置已应用且所有 listeners 已启动），
+# 返回 200 "ok" 或 503。默认需要 secret；true 时这两个路径无需认证（仅返回状态）。
+# Health probes: GET /healthz (the tunnel is running) and GET /readyz (the
+# configuration is applied and every listener listens), 200 "ok" or 503.
+# They require the secret by default; true serves these two paths without it
+# (they reveal nothing but the state). The rest of the API keeps the secret.
+# health-without-auth: false
 
 # TCP 出站连接建立总期限（毫秒），包含代理握手及重试，默认 5000，取值范围 100-600000。
 # 仅影响新连接，不影响已建立连接的读写、UDP 或健康检查。
@@ -243,6 +267,9 @@ sniffer:
   # 是否使用嗅探结果作为实际访问，默认 true
   # 全局配置，优先级低于 sniffer.sniff 实际配置
   override-destination: false
+  # TCP destinations (ip:port) whose domain sniffing failed more than this many times are not sniffed
+  # for 10 minutes; 0-254, -1 never skips, default 5. force-domain connections are always sniffed.
+  # skip-threshold: 5
   sniff: # TLS 和 QUIC 默认如果不配置 ports 默认嗅探 443
     QUIC:
     #  ports: [ 443 ]
@@ -356,6 +383,8 @@ dns:
 
   fake-ip-range: 198.18.0.1/16 # fake-ip 池设置
   # fake-ip-range6: fdfe:dcba:9876::1/64 # fake-ip6 池设置
+  # Names whose labels hold bytes no host name can (a dot, a space, a non-ASCII byte: \. \032 \152 in logs)
+  # never get a fake IP, they are resolved as usual and usually end in NXDOMAIN
 
   # 配置不使用 fake-ip 的域名
   fake-ip-filter:
@@ -405,6 +434,10 @@ dns:
     - https://mozilla.cloudflare-dns.com/dns-query#DNS&h3=true # 指定策略组和使用 HTTP/3
     - dhcp://en0 # dns from dhcp
     - quic://dns.adguard.com:784 # DNS over QUIC
+    # DNSCrypt v2 (sdns:// DNS stamp, protocol 0x01 only; DoH/DoT/DoQ stamps are rejected, use https:// / tls:// / quic://)
+    # 支持 #ProxyGroupName / #en0 等参数，证书查询与加密查询都走同一出口；响应被截断 (TC) 时自动改用 TCP 重试
+    # - sdns://AQMAAAAAAAAAEzE0OS4xMTIuMTEyLjEwOjg0NDMgZ8hHuMh1jNEgJFVDvnVnRt803x2EwAuMRwNo34Idhj4ZMi5kbnNjcnlwdC1jZXJ0LnF1YWQ5Lm5ldA # Quad9
+    # - 'sdns://AQMAAAAAAAAAEzE0OS4xMTIuMTEyLjEwOjg0NDMgZ8hHuMh1jNEgJFVDvnVnRt803x2EwAuMRwNo34Idhj4ZMi5kbnNjcnlwdC1jZXJ0LnF1YWQ5Lm5ldA#DNS'
     # - ts://tailscale # 使用指定 Tailscale 出站的 DNS 配置查询
     # - et://easytier # 仅解析 overlay A/PTR；建议放在 nameserver-policy
     # - '8.8.8.8#RULES' # 效果同respect-rules，但仅对该服务器生效
@@ -1173,6 +1206,7 @@ proxies: # socks5
     # max-stream-receive-window： 8388608
     # initial-connection-receive-window： 20971520
     # max-connection-receive-window： 20971520
+    # disable-mtu-discovery: false
 
   # wireguard
   - name: "wg"
@@ -1253,7 +1287,16 @@ proxies: # socks5
     # exit-node-allow-lan-access: true # 使用 exit node 时是否允许访问本地 LAN
     # 当目标不在 Tailscale 路由内时，连接会直接报错，不会回退到直连；
     # 访问公网需要配置可用的 exit-node，或接受覆盖目标网段的 subnet routes。
-    # 一个出站代理的标识。当值不为空时，将使用指定的 proxy 发出 Tailscale 控制面和 DERP/STUN 等连接
+    # 一个出站代理的标识。当值不为空时，Tailscale 控制面与 DERP 连接（TCP/HTTPS）经由指定的 proxy 发出；
+    # 此时不打开任何本地 UDP 套接字（不直连对端、不做 STUN/端口映射、不发 ICMP 探测），
+    # 所有对端流量都经 DERP 中继，延迟与吞吐不如直连，但不会有流量绕过该 proxy。
+    # 经 tailscale 转发到非 tailnet 上游的纯 UDP DNS 查询也会失败（MagicDNS 名称不受影响）。
+    # dialer-proxy: the control plane and DERP (TCP/HTTPS) go through this proxy.
+    # No local UDP socket is opened then (no direct peer paths, STUN, port
+    # mapping or ICMP probes), so all peer traffic is relayed by DERP: higher
+    # latency and lower throughput than a direct path, but nothing goes around
+    # the proxy. Plain UDP DNS that tailscale forwards to non-tailnet upstreams
+    # fails too (MagicDNS names are not affected).
     # dialer-proxy: "ss1"
     # interface-name: "WLAN" # 指定出站网卡
     # routing-mark: 6666 # Linux 下配置 fwmark
@@ -1387,6 +1430,7 @@ proxies: # socks5
     # ping-restart: 60 # 默认值为 0
     # tran-window: 3600 # 旧 data key 在 rekey 后保留的秒数；默认 3600，显式设为 0 表示立即过期，应与服务端 --tran-window 对齐
     # handshake-timeout: 30 # 单位为秒；配置后握手时不受外层连接超时影响；默认值为 0，表示仅使用外层连接超时
+    # tls-version-min: "1.3" # lowest TLS version of the control channel, "1.2" or "1.3"; unset = 1.2 (as --tls-version-min)
     # mtu: 1500
     udp: true
     # ip-stack:
@@ -1417,6 +1461,7 @@ proxies: # socks5
     # dns: [ 1.1.1.1, 8.8.8.8 ] # 仅在 remote-dns-resolve 为 true 时生效
     # congestion-controller: bbr # 默认不开启
     # handshake-timeout: 30 # 单位为秒；配置后握手时不受外层连接超时影响；默认值为 0，表示仅使用外层连接超时
+    # disable-mtu-discovery: false
 
   # masque-h3-l4proxy
   - name: "masque-h3-l4proxy"
@@ -1433,6 +1478,7 @@ proxies: # socks5
     # dns: [ tls://1.1.1.1, tls://1.0.0.1 ] # 仅在 remote-dns-resolve 为 true 时生效
     # congestion-controller: bbr # 默认不开启
     # handshake-timeout: 30 # 单位为秒；配置后握手时不受外层连接超时影响；默认值为 0，表示仅使用外层连接超时
+    # disable-mtu-discovery: false
 
   # masque-h2
   - name: "masque-h2"
@@ -1861,6 +1907,16 @@ rule-providers:
       - '*.*.microsoft.com'
       - 'books.itunes.apple.com'
 
+# 运行时可通过 PUT /rules 替换顶层规则：{"rules": ["DOMAIN,a.com,DIRECT", ...]}，
+# 写法与此处相同，整体校验通过后才原子替换，否则返回 400 和错误。sub-rules 与 rule-providers 不变。
+# 替换只在内存中：重新加载配置（PUT /configs、重启）会恢复此处的规则。
+# Runtime API: PUT /rules {"rules": ["DOMAIN,a.com,DIRECT", ...]} replaces the
+# top level rules. The lines are written and parsed as here (proxies, groups,
+# RULE-SET, SUB-RULE, logic rules); the whole list is validated first and
+# swapped at once, a bad line gives 400 with the error. Proxies of
+# proxy-providers are not valid targets here either: use a group. sub-rules and
+# rule-providers stay as they are. The change is in memory only: the next config
+# reload (PUT /configs, a restart) brings back the rules of this file.
 rules:
   - RULE-SET,rule1,REJECT
   - IP-ASN,1,PROXY
@@ -1916,7 +1972,43 @@ sub-rules:
 # socks/http/mixed): GET/PUT/POST /inbounds/{name}/users, PATCH/DELETE
 # /inbounds/{name}/users/{user}. The changes live in memory; a config reload sets the users
 # of the config again, and a reload that changes only the users updates them in place.
+#
+# 基于 TCP 的 listeners（http、socks、mixed、shadowsocks、snell、vless、trojan、anytls、sudoku、
+# trusttunnel、tunnel、hysteria2-realm）可监听 UNIX socket：listen: unix:/path（不填 port），
+# 用于放在 nginx/Caddy 后面。unix-mode 为 socket 权限（八进制，默认 0660；Windows 忽略）。
+# 启动时会删除无人监听的残留 socket；正在使用的 socket 或非 socket 文件会报错且不会被删除；关闭时删除 socket。
+# UDP（udp、kcp-tun、network: udp）以及 hysteria2、tuic、shadowquic、mieru、tun、redir、tproxy 不支持 UNIX socket。
+# UNIX socket 的对端视为 127.0.0.1（端口 0）：lan-allowed-ips、skip-auth-prefixes、trusted-proxies 等按回环地址处理；
+# 若要使用反向代理传来的真实 IP，需设置 trusted-proxy-header 并设置 trusted-proxies: [loopback]。
+# TCP-based listeners (http, socks, mixed, shadowsocks, snell, vless, trojan, anytls, sudoku,
+# trusttunnel, tunnel, hysteria2-realm) can listen on a unix socket instead of TCP ports, to sit
+# behind nginx or Caddy: listen: unix:/path, with no port. A relative path is taken from the home
+# directory. unix-mode sets the permissions of the socket (octal, default 0660: the user the core
+# runs as and its group; put the proxy's user in that group or use 0666), applied before anybody
+# can connect; Windows ignores it. On start a stale socket nobody listens on is removed; a socket
+# in use or a file that is not a socket is an error and is never removed. Close removes the socket.
+# UDP (udp, kcp-tun, network: udp) and the UDP/QUIC or host-bound listeners (hysteria2, tuic,
+# shadowquic, mieru, tun, redir, tproxy) cannot use a unix socket; udp defaults to false there.
+# A unix peer has no IP and is reported as 127.0.0.1 (port 0), like a proxy on a loopback port:
+# lan-allowed-ips, skip-auth-prefixes (127.0.0.1/8 there skips auth for every unix client),
+# per-user IP limits and SRC-IP rules see 127.0.0.1. To get the client address the proxy
+# forwards, set trusted-proxy-header and trusted-proxies: [loopback] (vless, trojan, hysteria2-realm).
+#   nginx: proxy_pass http://unix:/run/citrus/vless.sock;  (or grpc_pass unix:/run/citrus/vless.sock;)
+#   Caddy: reverse_proxy unix//run/citrus/vless.sock
 listeners:
+  # - name: vless-unix
+  #   type: vless
+  #   listen: unix:/run/citrus/vless.sock
+  #   unix-mode: 0660
+  #   users:
+  #     - username: 1
+  #       uuid: 9d0cb9d0-964f-4ef6-897d-6c6b3ccf9e68
+  #   xhttp-config:
+  #     path: "/xhttp"
+  #   allow-insecure: true # TLS is terminated by the reverse proxy
+  #   trusted-proxy-header: X-Forwarded-For
+  #   trusted-proxies: [loopback]
+
   - name: socks5-in-1
     type: socks
     port: 10808 # 支持使用ports格式，例如200,302 or 200,204,401-429,501-503

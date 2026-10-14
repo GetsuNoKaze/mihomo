@@ -54,15 +54,30 @@ type TunnelServer struct {
 
 	mu       sync.Mutex
 	sessions map[string]*tunnelSession
+	pending  int // sessions whose inner handshake has not answered yet, guarded by mu
 }
 
 const tunnelHeaderReadTimeout = 15 * time.Second
+
+// A stream/poll session is created by a plain GET /session (unless the early
+// handshake in that request authenticates it), so it costs a map entry, a pipe
+// and a reaper goroutine before the Sudoku handshake has checked the key. Such
+// a session stays pending until the inner protocol writes its first downlink
+// bytes, which the Sudoku server does only after a valid client hello. At most
+// maxPendingTunnelSessions may be pending (a new one gets 503 beyond that),
+// and a pending session is closed after pendingTunnelSessionTimeout. Sessions
+// that have answered are never reaped by these limits.
+var (
+	maxPendingTunnelSessions    = 4096
+	pendingTunnelSessionTimeout = 30 * time.Second
+)
 
 type tunnelSession struct {
 	conn           net.Conn
 	lastActive     time.Time
 	uplinkClosed   bool
 	downlinkClosed bool
+	pending        bool // no downlink bytes from the inner protocol yet, guarded by TunnelServer.mu
 	closed         chan struct{}
 	closeOnce      sync.Once
 
@@ -719,6 +734,7 @@ func (s *TunnelServer) sessionAuthorize(rawConn net.Conn, headerBytes, buffered,
 	outConn := net.Conn(c1)
 	var responsePayload []byte
 	var userHash string
+	authenticated := false
 	if len(earlyPayload) > 0 && s.earlyHandshake != nil && s.earlyHandshake.Prepare != nil {
 		prepared, err := s.earlyHandshake.Prepare(earlyPayload)
 		if err != nil {
@@ -728,6 +744,7 @@ func (s *TunnelServer) sessionAuthorize(rawConn net.Conn, headerBytes, buffered,
 		}
 		responsePayload = prepared.ResponsePayload
 		userHash = prepared.UserHash
+		authenticated = true
 		if prepared.WrapConn != nil {
 			wrapped, err := prepared.WrapConn(c1)
 			if err != nil {
@@ -744,7 +761,16 @@ func (s *TunnelServer) sessionAuthorize(rawConn net.Conn, headerBytes, buffered,
 	}
 
 	s.mu.Lock()
-	s.sessions[token] = &tunnelSession{conn: c2, closed: make(chan struct{}), lastActive: time.Now(), nextUploadSeq: 1}
+	if !authenticated && s.pending >= maxPendingTunnelSessions {
+		s.mu.Unlock()
+		_ = c1.Close()
+		_ = c2.Close()
+		return s.rejectOrReply(rawConn, headerBytes, buffered, http.StatusServiceUnavailable, "service unavailable")
+	}
+	s.sessions[token] = &tunnelSession{conn: c2, closed: make(chan struct{}), lastActive: time.Now(), nextUploadSeq: 1, pending: !authenticated}
+	if !authenticated {
+		s.pending++
+	}
 	s.mu.Unlock()
 
 	go s.reapLater(token)
@@ -775,9 +801,17 @@ func (s *TunnelServer) reapLater(token string) {
 	timer := time.NewTimer(ttl)
 	defer timer.Stop()
 
+	// A pending session gets a shorter deadline that activity does not extend.
+	pendingTimer := time.NewTimer(pendingTunnelSessionTimeout)
+	defer pendingTimer.Stop()
+	pendingC := pendingTimer.C
+
 	for {
 		s.mu.Lock()
 		sess, ok := s.sessions[token]
+		if ok && !sess.pending {
+			pendingC = nil
+		}
 		s.mu.Unlock()
 		if !ok {
 			return
@@ -785,6 +819,12 @@ func (s *TunnelServer) reapLater(token string) {
 
 		select {
 		case <-timer.C:
+		case <-pendingC:
+			pendingC = nil
+			if s.sessionCloseIfPending(token, sess) {
+				return
+			}
+			continue
 		case <-sess.closed:
 			return
 		}
@@ -811,6 +851,7 @@ func (s *TunnelServer) reapLater(token string) {
 		}
 		if idle >= ttl && !active {
 			delete(s.sessions, token)
+			s.unpendLocked(sess)
 			s.mu.Unlock()
 			sess.pullMu.Lock()
 			lease := sess.pull
@@ -867,18 +908,53 @@ func (s *TunnelServer) sessionClose(token string) {
 	sess, ok := s.sessions[token]
 	if ok {
 		delete(s.sessions, token)
+		s.unpendLocked(sess)
 	}
 	s.mu.Unlock()
 	if ok {
-		if sess.closed != nil {
-			sess.closeOnce.Do(func() { close(sess.closed) })
-		}
-		sess.pullMu.Lock()
-		lease := sess.pull
-		sess.pullMu.Unlock()
-		lease.stop()
-		_ = sess.conn.Close()
+		s.finishSessionClose(sess)
 	}
+}
+
+// sessionCloseIfPending closes sess if it is still registered under token and
+// its inner protocol has not answered yet.
+func (s *TunnelServer) sessionCloseIfPending(token string, sess *tunnelSession) bool {
+	s.mu.Lock()
+	if s.sessions[token] != sess || !sess.pending {
+		s.mu.Unlock()
+		return false
+	}
+	delete(s.sessions, token)
+	s.unpendLocked(sess)
+	s.mu.Unlock()
+	s.finishSessionClose(sess)
+	return true
+}
+
+func (s *TunnelServer) finishSessionClose(sess *tunnelSession) {
+	if sess.closed != nil {
+		sess.closeOnce.Do(func() { close(sess.closed) })
+	}
+	sess.pullMu.Lock()
+	lease := sess.pull
+	sess.pullMu.Unlock()
+	lease.stop()
+	_ = sess.conn.Close()
+}
+
+// unpendLocked drops sess from the pending count. s.mu must be held.
+func (s *TunnelServer) unpendLocked(sess *tunnelSession) {
+	if sess.pending {
+		sess.pending = false
+		s.pending--
+	}
+}
+
+// sessionActivate marks sess as answered by the inner protocol.
+func (s *TunnelServer) sessionActivate(sess *tunnelSession) {
+	s.mu.Lock()
+	s.unpendLocked(sess)
+	s.mu.Unlock()
 }
 
 func (s *TunnelServer) sessionCloseWrite(token string) {
@@ -909,6 +985,7 @@ func (s *TunnelServer) sessionHalfClose(token string, direction sessionDirection
 	}
 	if sess.uplinkClosed && sess.downlinkClosed {
 		delete(s.sessions, token)
+		s.unpendLocked(sess)
 		if sess.closed != nil {
 			sess.closeOnce.Do(func() { close(sess.closed) })
 		}
@@ -1197,6 +1274,8 @@ func (s *TunnelServer) sessionPull(rawConn net.Conn, token string, keepalive boo
 			_ = sess.conn.SetReadDeadline(time.Now().Add(s.pullReadTimeout))
 			n, err = sess.conn.Read(buf)
 			if n > 0 {
+				// the inner protocol has answered: the session is no longer pending
+				s.sessionActivate(sess)
 				s.storeDownlink(sess, buf[:n])
 				payload = s.pendingDownlink(sess)
 			}

@@ -1767,6 +1767,7 @@ func (c *Client) tlsConfig() (*tls.Config, error) {
 		// Allow the server to initiate TLS renegotiation (rekey). OpenVPN
 		// servers rekey the control channel at regular intervals (default 1h).
 		Renegotiation: tls.RenegotiateFreelyAsClient,
+		MinVersion:    c.config.tlsMinVersion,
 	}
 	certPEM := bytes.TrimSpace(c.config.Cert)
 	keyPEM := bytes.TrimSpace(c.config.Key)

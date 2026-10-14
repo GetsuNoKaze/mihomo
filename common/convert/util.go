@@ -3,6 +3,7 @@ package convert
 import (
 	"encoding/base64"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -321,6 +322,18 @@ func SetUserAgent(header http.Header) {
 func VerifyMethod(cipher, password string) (err error) {
 	_, err = shadowimpl.FetchMethod(cipher, password, time.Now)
 	return
+}
+
+// linkAllowsInsecure reports whether a share link explicitly turns off
+// certificate verification: skip-cert-verify, allowInsecure or insecure set to
+// a true value (1, true). Absent or anything else means verify.
+func linkAllowsInsecure(query url.Values) bool {
+	for _, key := range []string{"skip-cert-verify", "allowInsecure", "insecure"} {
+		if v, err := strconv.ParseBool(query.Get(key)); err == nil && v {
+			return true
+		}
+	}
+	return false
 }
 
 // handleTLSShareLinkQuery handles the TLS parameters of Xray share links:

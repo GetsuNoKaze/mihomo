@@ -190,6 +190,11 @@ func main() {
 		return
 	}
 
+	if runtime.GOOS == "windows" && features.AffectedByGoIssue78041(runtime.Version()) {
+		log.Warnln("Built with %s, which corrupts memory on Windows when receiving UDP (https://go.dev/issue/78041) "+
+			"and may crash at random; rebuild with go1.26.2 or newer", runtime.Version())
+	}
+
 	var options []hub.Option
 	if externalUI != "" {
 		options = append(options, hub.WithExternalUI(externalUI))

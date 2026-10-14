@@ -22,7 +22,7 @@ type Stream struct {
 	writeDeadline pipe.PipeDeadline
 
 	dieOnce sync.Once
-	dieHook func()
+	dieHook func()                // set before the stream is published, run once by whoever wins dieOnce
 	dieErr  atomic.Pointer[error] // set once in dieOnce, read by Read/Write from other goroutines
 
 	reportOnce sync.Once
@@ -152,7 +152,7 @@ func (s *Stream) HandshakeFailure(err error) error {
 	s.reportOnce.Do(func() {
 		once = true
 	})
-	if once && err != nil && s.sess.peerVersion >= 2 {
+	if once && err != nil && s.sess.peerVersion.Load() >= 2 {
 		f := newFrame(cmdSYNACK, s.id)
 		f.data = []byte(err.Error())
 		if _, err := s.sess.writeControlFrame(f); err != nil {
@@ -168,7 +168,7 @@ func (s *Stream) HandshakeSuccess() error {
 	s.reportOnce.Do(func() {
 		once = true
 	})
-	if once && s.sess.peerVersion >= 2 {
+	if once && s.sess.peerVersion.Load() >= 2 {
 		if _, err := s.sess.writeControlFrame(newFrame(cmdSYNACK, s.id)); err != nil {
 			return err
 		}

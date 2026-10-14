@@ -18,6 +18,7 @@ The config format is shared with mihomo, so the [mihomo documentation](https://w
 | `external-controller`, `external-ui`, `secret` | The controller API and web UI. |
 | `user-stats` | Per-user traffic accounting for inbounds (on by default), see [User traffic](/Citrus/en/start/user-stats/). |
 | `user-limits` | Limits of inbound users: speed, connections, addresses, quota, expiry, see [User limits](/Citrus/en/start/user-limits/). |
+| `metrics`, `health-without-auth` | Prometheus metrics (`GET /metrics`) and the `/healthz`, `/readyz` probes, see [Metrics and health](/Citrus/en/start/metrics/). |
 | `tun` | The TUN device and network stack. |
 | `dns`, `hosts` | DNS servers, fake IP, policies for DNS queries. |
 | `dns.serve-expired`, `dns.serve-expired-ttl`, `dns.serve-expired-client-timeout` | Serving expired cache entries while they refresh (RFC 8767). By default an expired entry is answered at once and refreshed in the background, as before; a TTL and client timeout give RFC 8767 behaviour. |
@@ -26,6 +27,12 @@ The config format is shared with mihomo, so the [mihomo documentation](https://w
 | `rules`, `sub-rules`, `rule-providers` | Routing rules and remote rule sets. |
 | `listeners`, `tunnels` | Extra inbounds, including server protocols. |
 | `geox-url`, `geo-auto-update` | Where and how often to update geodata. |
+
+## Rules at runtime
+
+`PUT /rules` with the body `{"rules": ["DOMAIN,a.com,DIRECT", "MATCH,PROXY"]}` replaces the top level rules without a config reload. The lines are written as in `rules:` and parsed by the same code: targets are proxies and groups, and `RULE-SET`, `SUB-RULE` and logic rules work. The whole list is validated before the swap; a bad line gives 400 with the error and leaves the rules unchanged. Proxies of `proxy-providers` cannot be targets (as in the config): use a group. `sub-rules` and `rule-providers` stay as they are.
+
+The replacement lives in memory only: the next config reload (`PUT /configs`, `systemctl reload`, a restart) brings back the rules of the file. The response is `{"count": N, "ephemeral": true}`.
 
 ## Testing
 

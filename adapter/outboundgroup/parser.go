@@ -8,6 +8,7 @@ import (
 	"github.com/dlclark/regexp2"
 
 	"github.com/metacubex/mihomo/adapter/provider"
+	"github.com/metacubex/mihomo/common/regexp2x"
 	"github.com/metacubex/mihomo/common/structure"
 	"github.com/metacubex/mihomo/common/utils"
 	C "github.com/metacubex/mihomo/constant"
@@ -96,12 +97,12 @@ func ParseProxyGroup(config map[string]any, proxyMap map[string]C.Proxy, provide
 		if groupOption.Filter != "" {
 			var filterRegs []*regexp2.Regexp
 			for _, filter := range strings.Split(groupOption.Filter, "`") {
-				filterReg := regexp2.MustCompile(filter, regexp2.None)
+				filterReg := regexp2x.MustCompile(filter, regexp2.None)
 				filterRegs = append(filterRegs, filterReg)
 			}
 			for _, p := range AllProxies {
 				for _, filterReg := range filterRegs {
-					if mat, _ := filterReg.MatchString(p); mat {
+					if regexp2x.MatchString(filterReg, p) {
 						groupOption.Proxies = append(groupOption.Proxies, p)
 					}
 				}

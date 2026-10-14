@@ -134,6 +134,12 @@ func transform(servers []NameServer, resolver resolver.Resolver) []dnsClient {
 			c = newRCodeClient(s.Addr)
 		case "quic":
 			c = newDoQ(s.Addr, resolver, s.Params, s.ProxyAdapter, s.ProxyName)
+		case "dnscrypt":
+			if dc, err := newDNSCryptClient(s.Addr, resolver, s.ProxyAdapter, s.ProxyName); err != nil {
+				c = errorClient{addr: s.Addr, err: err}
+			} else {
+				c = dc
+			}
 		default:
 			c = newClient(s.Addr, resolver, s.Net, s.Params, s.ProxyAdapter, s.ProxyName)
 		}

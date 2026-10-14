@@ -40,6 +40,7 @@ type tcpTracker struct {
 	manager *Manager
 	user    *UserCounter
 	binding userBinding
+	inbound *InboundCounter
 	closed  stdatomic.Bool
 
 	pushToManager bool `json:"-"`
@@ -59,6 +60,7 @@ func (tt *tcpTracker) countDown(n int64) {
 	if tt.pushToManager {
 		tt.manager.PushDownloaded(n)
 	}
+	tt.inbound.addDown(n)
 	if u := tt.user; u != nil {
 		u.AddDown(n)
 		if l := u.limit.Load(); l != nil {
@@ -74,6 +76,7 @@ func (tt *tcpTracker) countUp(n int64) {
 	if tt.pushToManager {
 		tt.manager.PushUploaded(n)
 	}
+	tt.inbound.addUp(n)
 	if u := tt.user; u != nil {
 		u.AddUp(n)
 		if l := u.limit.Load(); l != nil {
@@ -171,6 +174,49 @@ type trackerReader struct{ t *tcpTracker }
 func (r trackerReader) Read(b []byte) (int, error)          { return r.t.Read(b) }
 func (r trackerReader) ReadBuffer(buffer *buf.Buffer) error { return r.t.ReadBuffer(buffer) }
 
+// CreateReadWaiter keeps the read waiter of the connection (a socket waits
+// for data before it takes a buffer) for a user with a limit: the reader
+// counts and throttles what each wait returns, as Read does. Without it the
+// copy reads through Read and holds a full pool buffer while the remote is
+// silent, for as long as the connection stays open.
+func (r trackerReader) CreateReadWaiter() (N.ReadWaiter, bool) {
+	inner, counters := N.UnwrapCountReader(r.t.Conn, nil)
+	if _, isCached := inner.(N.CachedReader); isCached {
+		return nil, false // the copy reads the cached data through Read
+	}
+	waiter, ok := N.CreateReadWaiter(inner)
+	if !ok {
+		return nil, false
+	}
+	return &trackerReadWaiter{t: r.t, waiter: waiter, counters: counters}, true
+}
+
+type trackerReadWaiter struct {
+	t        *tcpTracker
+	waiter   N.ReadWaiter
+	counters []N.CountFunc
+}
+
+func (w *trackerReadWaiter) InitializeReadWaiter(options N.ReadWaitOptions) (needCopy bool) {
+	return w.waiter.InitializeReadWaiter(options)
+}
+
+func (w *trackerReadWaiter) WaitReadBuffer() (*buf.Buffer, error) {
+	if overQuota(w.t.user) {
+		return nil, ErrQuotaExceeded
+	}
+	buffer, err := w.waiter.WaitReadBuffer()
+	if err != nil {
+		return nil, err
+	}
+	n := int64(buffer.Len())
+	for _, counter := range w.counters {
+		counter(n)
+	}
+	w.t.countDown(n)
+	return buffer, nil
+}
+
 type trackerWriter struct{ t *tcpTracker }
 
 func (w trackerWriter) Write(b []byte) (int, error)          { return w.t.Write(b) }
@@ -180,6 +226,7 @@ func (tt *tcpTracker) Close() error {
 	if tt.closed.CompareAndSwap(false, true) {
 		tt.manager.Leave(tt)
 		tt.binding.release()
+		tt.inbound.release()
 	}
 	return tt.Conn.Close()
 }
@@ -218,6 +265,9 @@ func newTCPTracker(conn C.Conn, manager *Manager, metadata *C.Metadata, rule C.R
 		binding:       binding,
 	}
 	t.user = t.binding.counter
+	t.inbound = manager.bindInbound(metadata, pushToManager)
+	t.inbound.addUp(uploadTotal)
+	t.inbound.addDown(downloadTotal)
 
 	if pushToManager {
 		if uploadTotal > 0 {
@@ -244,6 +294,7 @@ type udpTracker struct {
 	manager *Manager
 	user    *UserCounter
 	binding userBinding
+	inbound *InboundCounter
 	closed  stdatomic.Bool
 
 	pushToManager bool `json:"-"`
@@ -261,6 +312,7 @@ func (ut *udpTracker) countDown(n int64) {
 	if ut.pushToManager {
 		ut.manager.PushDownloaded(n)
 	}
+	ut.inbound.addDown(n)
 	if u := ut.user; u != nil {
 		u.AddDown(n)
 		if l := u.limit.Load(); l != nil {
@@ -274,6 +326,7 @@ func (ut *udpTracker) countUp(n int64) {
 	if ut.pushToManager {
 		ut.manager.PushUploaded(n)
 	}
+	ut.inbound.addUp(n)
 	if u := ut.user; u != nil {
 		u.AddUp(n)
 		if l := u.limit.Load(); l != nil {
@@ -314,6 +367,7 @@ func (ut *udpTracker) Close() error {
 	if ut.closed.CompareAndSwap(false, true) {
 		ut.manager.Leave(ut)
 		ut.binding.release()
+		ut.inbound.release()
 	}
 	return ut.PacketConn.Close()
 }
@@ -352,6 +406,9 @@ func newUDPTracker(conn C.PacketConn, manager *Manager, metadata *C.Metadata, ru
 		binding:       binding,
 	}
 	ut.user = ut.binding.counter
+	ut.inbound = manager.bindInbound(metadata, pushToManager)
+	ut.inbound.addUp(uploadTotal)
+	ut.inbound.addDown(downloadTotal)
 
 	if pushToManager {
 		if uploadTotal > 0 {

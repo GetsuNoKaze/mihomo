@@ -45,10 +45,12 @@ github.com/fxamacker/cbor/v2 v2.9.0 h1:NpKPmjDBgUfBms6tr6JZkTHtfFGcMKsw3eGcmD/sa
 github.com/fxamacker/cbor/v2 v2.9.0/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/gaukas/godicttls v0.0.4 h1:NlRaXb3J6hAnTmWdsEKb9bcSBD6BvcIjdGdeb0zfXbk=
 github.com/gaukas/godicttls v0.0.4/go.mod h1:l6EenT4TLWgTdwslVb4sEMOCf7Bv0JAK67deKr9/NCI=
-github.com/getmikan/http v0.1.8-citrus.1 h1:RrsGcZMtUwoV/TCYa0g9AxpY7mL7BjlQYfGTgIBFrW4=
-github.com/getmikan/http v0.1.8-citrus.1/go.mod h1:Nxx0zZAo2AhRfanyL+fmmK6ACMtVsfpwIl1aFAik2Eg=
-github.com/getmikan/utls v1.8.8-citrus.1 h1:0khgh+/PKgMHVnR7AsRxL7cQAeY7tLJVJhhZsGdrXME=
-github.com/getmikan/utls v1.8.8-citrus.1/go.mod h1:gxkPJpm+5l3rStQM59z70up244h0tv4TlSkB5dlakjU=
+github.com/getmikan/http v0.1.8-citrus.2 h1:eBNDiHT/4KQMIhEZ+T81w4MrMo00gwMPm7jaY8GJYuc=
+github.com/getmikan/http v0.1.8-citrus.2/go.mod h1:Nxx0zZAo2AhRfanyL+fmmK6ACMtVsfpwIl1aFAik2Eg=
+github.com/getmikan/tls v0.1.8-citrus.1 h1:YR2EesUPoucmkm5h11tkrZ+47EfMoXTQUNNgRELaRaM=
+github.com/getmikan/tls v0.1.8-citrus.1/go.mod h1:0XeVdL0cBw+8i5Hqy3lVeP9IyD/LFTq02ExvHM6rzEM=
+github.com/getmikan/utls v1.8.8-citrus.3 h1:gjspcQTkRv7qdEiE3GlA8YCkscymuzItqwHNe1Vs6es=
+github.com/getmikan/utls v1.8.8-citrus.3/go.mod h1:gxkPJpm+5l3rStQM59z70up244h0tv4TlSkB5dlakjU=
 github.com/github/fakeca v0.1.0 h1:Km/MVOFvclqxPM9dZBC4+QE564nU4gz4iZ0D9pMw28I=
 github.com/go-ole/go-ole v1.3.0 h1:Dt6ye7+vXGIKZ7Xtk4s6/xVdGDQynvom7xCFEdWr6uE=
 github.com/go-ole/go-ole v1.3.0/go.mod h1:5LS6F96DhAwUc7C+1HLexzMXY1xGRSryjyPPKW6zv78=
@@ -179,8 +181,6 @@ github.com/metacubex/tailscale-wireguard-go v0.0.0-20260725073821-e61ab99cede2 h
 github.com/metacubex/tailscale-wireguard-go v0.0.0-20260725073821-e61ab99cede2/go.mod h1:W00EeoPdd2jbV3+ZUa0m2b7FdKx5B1LFsXvEpy7cToQ=
 github.com/metacubex/tfo-go v0.0.0-20260623020846-376a77860b8c h1:+2C1UshSLzaogLY/IDz1XhOLxjhs3rkhVHB4eCN9Zto=
 github.com/metacubex/tfo-go v0.0.0-20260623020846-376a77860b8c/go.mod h1:l9oLnLoEXyGZ5RVLsh7QCC5XsouTUyKk4F2nLm2DHLw=
-github.com/metacubex/tls v0.1.8 h1:BHF2payjtxC7wdR3tnq8vl3FAgEQB6/pPjP2tJNTsP4=
-github.com/metacubex/tls v0.1.8/go.mod h1:0XeVdL0cBw+8i5Hqy3lVeP9IyD/LFTq02ExvHM6rzEM=
 github.com/metacubex/wazero v0.0.0-20260628025728-9ae6bdcf2a7d h1:UMFI+kdp0jA8s9tC7oul0pWeTW6s8lnm0dD5PT+RY14=
 github.com/metacubex/wazero v0.0.0-20260628025728-9ae6bdcf2a7d/go.mod h1:p48xp436h1oGfoXuEnVONeDhTW+E2UpY94GAVxA62oI=
 github.com/metacubex/wireguard-go v0.0.0-20250820062549-a6cecdd7f57f h1:FGBPRb1zUabhPhDrlKEjQ9lgIwQ6cHL4x8M9lrERhbk=

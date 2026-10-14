@@ -150,6 +150,7 @@ func NewWithConfig(config LC.AuthServer, lc C.InboundListenConfig, tunnel C.Tunn
 
 func handleSocks(conn net.Conn, tunnel C.Tunnel, store auth.AuthStore, additions ...inbound.Addition) {
 	bufConn := N.NewBufferedConn(conn)
+	authStore.SetHandshakeDeadline(conn)
 	head, err := bufConn.Peek(1)
 	if err != nil {
 		conn.Close()
@@ -168,11 +169,13 @@ func handleSocks(conn net.Conn, tunnel C.Tunnel, store auth.AuthStore, additions
 
 func HandleSocks4(conn net.Conn, tunnel C.Tunnel, store auth.AuthStore, additions ...inbound.Addition) {
 	authenticator := store.Authenticator()
+	authStore.SetHandshakeDeadline(conn)
 	addr, _, user, err := socks4.ServerHandshake(conn, authenticator)
 	if err != nil {
 		conn.Close()
 		return
 	}
+	authStore.ClearHandshakeDeadline(conn)
 	release, ok := auth.BindSession(authenticator, user, conn)
 	if !ok {
 		conn.Close()
@@ -185,11 +188,13 @@ func HandleSocks4(conn net.Conn, tunnel C.Tunnel, store auth.AuthStore, addition
 
 func HandleSocks5(conn net.Conn, tunnel C.Tunnel, store auth.AuthStore, additions ...inbound.Addition) {
 	authenticator := store.Authenticator()
+	authStore.SetHandshakeDeadline(conn)
 	target, command, user, err := socks5.ServerHandshake(conn, authenticator)
 	if err != nil {
 		conn.Close()
 		return
 	}
+	authStore.ClearHandshakeDeadline(conn)
 	// the session dies with the user when its users can change at runtime
 	release, ok := auth.BindSession(authenticator, user, conn)
 	if !ok {

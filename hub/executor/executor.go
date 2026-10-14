@@ -34,6 +34,7 @@ import (
 	C "github.com/metacubex/mihomo/constant"
 	P "github.com/metacubex/mihomo/constant/provider"
 	"github.com/metacubex/mihomo/dns"
+	"github.com/metacubex/mihomo/hub/metrics"
 	"github.com/metacubex/mihomo/listener"
 	authStore "github.com/metacubex/mihomo/listener/auth"
 	LC "github.com/metacubex/mihomo/listener/config"
@@ -88,6 +89,7 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	mux.Lock()
 	defer mux.Unlock()
 	log.SetLevel(cfg.General.LogLevel)
+	log.SetFormat(cfg.General.LogFormat, cfg.General.LogTimestampFormat)
 
 	tunnel.OnSuspend()
 
@@ -99,6 +101,7 @@ func ApplyConfig(cfg *config.Config, force bool) {
 	}
 
 	updateExperimental(cfg.Experimental)
+	updateMetrics(cfg.Metrics)
 	updateUsers(cfg.Users)
 	updateProxies(cfg.Proxies, cfg.Providers)
 	updateRules(cfg.Rules, cfg.SubRules, cfg.RuleProviders)
@@ -231,6 +234,7 @@ func GetGeneral() *config.General {
 		DisableKeepAlive:  keepalive.DisableKeepAlive(),
 		UserStats:         statistic.UserStatsEnabled(),
 	}
+	general.LogFormat, general.LogTimestampFormat = log.Format()
 
 	return general
 }
@@ -256,6 +260,13 @@ func updateListeners(general *config.General, listeners map[string]C.InboundList
 	listener.ReCreateMixed(general.MixedPort, tunnel.Tunnel)
 	listener.ReCreateShadowSocks(general.ShadowSocksConfig, tunnel.Tunnel)
 	listener.ReCreateTuic(general.TuicServer, tunnel.Tunnel)
+}
+
+func updateMetrics(c *config.Metrics) {
+	if c == nil {
+		c = &config.Metrics{}
+	}
+	metrics.SetOptions(metrics.Options{Enable: c.Enable, PerUser: c.PerUser, HealthWithoutAuth: c.HealthWithoutAuth})
 }
 
 func updateTun(general *config.General) {

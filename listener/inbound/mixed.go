@@ -38,9 +38,12 @@ type Mixed struct {
 }
 
 func NewMixed(options *MixedOption) (*Mixed, error) {
-	base, err := NewBase(&options.BaseOption)
+	base, err := newStreamBase(&options.BaseOption)
 	if err != nil {
 		return nil, err
+	}
+	if base.IsUnix() && options.UDP {
+		return nil, errUnixUDP(options.Listen, "udp")
 	}
 	return &Mixed{
 		Base:           base,

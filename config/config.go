@@ -70,6 +70,9 @@ type General struct {
 	KeepAliveInterval int                     `json:"keep-alive-interval"`
 	DisableKeepAlive  bool                    `json:"disable-keep-alive"`
 	UserStats         bool                    `json:"user-stats"`
+
+	LogFormat          log.LogFormat `json:"log-format"`
+	LogTimestampFormat string        `json:"log-timestamp-format"`
 }
 
 // Inbound config
@@ -219,6 +222,32 @@ type Config struct {
 	Sniffer       *sniffer.Config
 	TLS           *TLS
 	UserLimits    []statistic.UserLimit
+	Metrics       *Metrics
+}
+
+// Metrics is the `metrics` section and `health-without-auth`.
+type Metrics struct {
+	// Enable serves GET /metrics on the controller and counts the traffic
+	// per inbound.
+	Enable bool `json:"enable"`
+	// PerUser adds the series of every inbound user (high cardinality).
+	PerUser bool `json:"per-user"`
+	// HealthWithoutAuth serves GET /healthz and GET /readyz without the
+	// controller secret.
+	HealthWithoutAuth bool `json:"health-without-auth"`
+}
+
+func parseMetrics(rawCfg *RawConfig) *Metrics {
+	return &Metrics{
+		Enable:            rawCfg.Metrics.Enable,
+		PerUser:           rawCfg.Metrics.PerUser,
+		HealthWithoutAuth: rawCfg.HealthWithoutAuth,
+	}
+}
+
+type RawMetrics struct {
+	Enable  bool `yaml:"enable" json:"enable"`
+	PerUser bool `yaml:"per-user" json:"per-user"`
 }
 
 type RawCors struct {
@@ -393,6 +422,7 @@ type RawSniffer struct {
 	Ports           []string `yaml:"port-whitelist" json:"port-whitelist"`
 	ForceDnsMapping bool     `yaml:"force-dns-mapping" json:"force-dns-mapping"`
 	ParsePureIp     bool     `yaml:"parse-pure-ip" json:"parse-pure-ip"`
+	SkipThreshold   *int     `yaml:"skip-threshold" json:"skip-threshold"`
 
 	Sniff map[string]RawSniffingConfig `yaml:"sniff" json:"sniff"`
 }
@@ -430,6 +460,8 @@ type RawConfig struct {
 	Mode                          T.TunnelMode            `yaml:"mode" json:"mode"`
 	UnifiedDelay                  bool                    `yaml:"unified-delay" json:"unified-delay"`
 	LogLevel                      log.LogLevel            `yaml:"log-level" json:"log-level"`
+	LogFormat                     log.LogFormat           `yaml:"log-format" json:"log-format"`
+	LogTimestampFormat            string                  `yaml:"log-timestamp-format" json:"log-timestamp-format"`
 	IPv6                          bool                    `yaml:"ipv6" json:"ipv6"`
 	ExternalController            string                  `yaml:"external-controller" json:"external-controller"`
 	ExternalControllerRoutingMark int                     `yaml:"external-controller-routing-mark" json:"external-controller-routing-mark"`
@@ -452,6 +484,7 @@ type RawConfig struct {
 	GeositeMatcher                string                  `yaml:"geosite-matcher" json:"geosite-matcher"`
 	TCPConcurrent                 bool                    `yaml:"tcp-concurrent" json:"tcp-concurrent"`
 	UserStats                     bool                    `yaml:"user-stats" json:"user-stats"`
+	HealthWithoutAuth             bool                    `yaml:"health-without-auth" json:"health-without-auth"`
 	TCPConnectTimeout             int64                   `yaml:"tcp-connect-timeout" json:"tcp-connect-timeout"`
 	FindProcessMode               process.FindProcessMode `yaml:"find-process-mode" json:"find-process-mode"`
 	GlobalClientFingerprint       string                  `yaml:"global-client-fingerprint" json:"global-client-fingerprint"`
@@ -469,6 +502,7 @@ type RawConfig struct {
 	SubRules      map[string][]string       `yaml:"sub-rules" json:"sub-rules"`
 	Listeners     []map[string]any          `yaml:"listeners" json:"listeners"`
 	UserLimits    []map[string]any          `yaml:"user-limits" json:"user-limits"`
+	Metrics       RawMetrics                `yaml:"metrics" json:"metrics"`
 	Hosts         map[string]any            `yaml:"hosts" json:"hosts"`
 	DNS           RawDNS                    `yaml:"dns" json:"dns"`
 	NTP           RawNTP                    `yaml:"ntp" json:"ntp"`
@@ -668,6 +702,7 @@ func ParseRawConfig(rawCfg *RawConfig) (*Config, error) {
 		return nil, err
 	}
 	config.Controller = controller
+	config.Metrics = parseMetrics(rawCfg)
 
 	experimental, err := parseExperimental(rawCfg)
 	if err != nil {
@@ -798,6 +833,10 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 	if err := T.ValidateTCPConnectTimeout(cfg.TCPConnectTimeout); err != nil {
 		return nil, fmt.Errorf("invalid tcp-connect-timeout: %w", err)
 	}
+	logTimestampFormat := cfg.LogTimestampFormat
+	if logTimestampFormat == "" {
+		logTimestampFormat = log.DefaultTimestampFormat
+	}
 	return &General{
 		Inbound: Inbound{
 			Port:              cfg.Port,
@@ -840,6 +879,9 @@ func parseGeneral(cfg *RawConfig) (*General, error) {
 		KeepAliveInterval: cfg.KeepAliveInterval,
 		DisableKeepAlive:  cfg.DisableKeepAlive,
 		UserStats:         cfg.UserStats,
+
+		LogFormat:          cfg.LogFormat,
+		LogTimestampFormat: logTimestampFormat,
 	}, nil
 }
 
@@ -1194,6 +1236,29 @@ func parseRules(rulesConfig []string, proxies map[string]C.Proxy, ruleProviders 
 	return rules, nil
 }
 
+// ParseRules parses top level rules exactly like the `rules:` section of a config:
+// every target must be a proxy, a proxy group or (for SUB-RULE) a sub-rule, and
+// every rule set must be a loaded rule provider. The proxies of proxy providers
+// are not valid targets, as in a config file; such a target gets an error that
+// names its provider.
+func ParseRules(rulesConfig []string, proxies map[string]C.Proxy, providers map[string]P.ProxyProvider, ruleProviders map[string]P.RuleProvider, subRules map[string][]C.Rule) ([]C.Rule, error) {
+	for idx, line := range rulesConfig {
+		tp, _, target, _ := RC.ParseRulePayload(line, true)
+		if target == "" || tp == "SUB-RULE" {
+			continue
+		}
+		if _, ok := proxies[target]; ok {
+			continue
+		}
+		for name, pd := range providers {
+			if slices.ContainsFunc(pd.Proxies(), func(p C.Proxy) bool { return p.Name() == target }) {
+				return nil, fmt.Errorf("rules[%d] [%s] error: proxy [%s] comes from proxy-provider [%s]; rules can target only proxies and proxy groups, use a group that includes it", idx, line, target, name)
+			}
+		}
+	}
+	return parseRules(rulesConfig, proxies, ruleProviders, subRules, "rules")
+}
+
 func parseHosts(cfg *RawConfig) (*trie.DomainTrie[resolver.HostValue], error) {
 	tree := trie.New[resolver.HostValue]()
 
@@ -1228,11 +1293,17 @@ func parseHosts(cfg *RawConfig) (*trie.DomainTrie[resolver.HostValue], error) {
 			}
 			if value.IsDomain {
 				node := tree.Search(value.Domain)
-				for node != nil && node.Data().IsDomain {
-					if node.Data().Domain == domain {
+				for hops := 0; node != nil && node.Data().IsDomain; hops++ {
+					target := node.Data().Domain
+					if target == domain || hops == resolver.MaxHostsHops {
 						return nil, fmt.Errorf("%s, there is a cycle in domain name mapping", domain)
 					}
-					node = tree.Search(node.Data().Domain)
+					next := tree.Search(target)
+					if next == node {
+						// a mapping onto itself (e.g. `+.example.com: example.com`) ends the chain
+						break
+					}
+					node = next
 				}
 			}
 			if err := tree.Insert(domain, value); err != nil {
@@ -1311,6 +1382,10 @@ func parseNameServer(servers []string, respectRules bool, preferH3 bool) ([]dns.
 		case "quic":
 			addr, err = hostWithDefaultPort(u.Host, "853")
 			dnsNetType = "quic" // DNS over QUIC
+		case "sdns":
+			addr = "sdns://" + u.Host // the stamp is opaque base64url; #fragment is parsed above
+			dnsNetType = "dnscrypt"   // DNSCrypt v2
+			err = dns.ValidateDNSCryptStamp(addr)
 		case "system":
 			dnsNetType = "system" // System DNS
 		case "ts", "tailscale":
@@ -1854,6 +1929,10 @@ func parseSniffer(snifferRaw RawSniffer, ruleProviders map[string]P.RuleProvider
 		Enable:          snifferRaw.Enable,
 		ForceDnsMapping: snifferRaw.ForceDnsMapping,
 		ParsePureIp:     snifferRaw.ParsePureIp,
+		SkipThreshold:   snifferRaw.SkipThreshold,
+	}
+	if t := snifferRaw.SkipThreshold; t != nil && (*t < -1 || *t > sniffer.MaxSkipThreshold) {
+		return nil, fmt.Errorf("sniffer.skip-threshold must be -1 (never skip) or 0-%d, got %d", sniffer.MaxSkipThreshold, *t)
 	}
 	loadSniffer := make(map[snifferTypes.Type]sniffer.SnifferConfig)
 

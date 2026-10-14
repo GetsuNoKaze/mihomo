@@ -40,8 +40,11 @@ func NewTrustTunnel(options *TrustTunnelOption) (*TrustTunnel, error) {
 	if err := TT.ValidateFallback(options.Fallback); err != nil {
 		return nil, err
 	}
-	base, err := NewBase(&options.BaseOption)
+	base, err := newStreamBase(&options.BaseOption)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkUnixNetworks(base, options.Network); err != nil {
 		return nil, err
 	}
 	users := make(map[string]string)

@@ -63,6 +63,7 @@ type OpenVPNOption struct {
 	PingRestart        int               `proxy:"ping-restart,omitempty"`
 	TranWindow         *int              `proxy:"tran-window,omitempty"`
 	HandshakeTimeout   int               `proxy:"handshake-timeout,omitempty"`
+	TLSVersionMin      string            `proxy:"tls-version-min,omitempty"`
 	MTU                int               `proxy:"mtu,omitempty"`
 	UDP                bool              `proxy:"udp,omitempty"`
 
@@ -121,6 +122,7 @@ func NewOpenVPN(option OpenVPNOption) (*OpenVPN, error) {
 		PingRestart:         time.Duration(option.PingRestart) * time.Second,
 		TransitionWindow:    transitionWindow,
 		TransitionWindowSet: transitionWindowSet,
+		TLSVersionMin:       option.TLSVersionMin,
 	}
 	if err := cfg.Prepare(); err != nil {
 		return nil, err

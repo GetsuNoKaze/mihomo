@@ -195,6 +195,8 @@ func NatTable() C.NatTable {
 
 // Rules return all rules
 func Rules() []C.Rule {
+	configMux.RLock()
+	defer configMux.RUnlock()
 	return rules
 }
 
@@ -208,7 +210,54 @@ func UpdateRules(newRules []C.Rule, newSubRule map[string][]C.Rule, rp map[strin
 	rules = newRules
 	ruleProviders = rp
 	subRules = newSubRule
+	ruleGeneration++
 	configMux.Unlock()
+}
+
+// ErrRulesChanged is returned by ReplaceRules when the config was reloaded or
+// the proxies were replaced after the snapshot the new rules were parsed against.
+var ErrRulesChanged = errors.New("the config changed while the rules were parsed")
+
+// ruleGeneration counts the replacements of everything the top level rules are
+// resolved against (proxies, rule providers, sub-rules). Guarded by configMux.
+var ruleGeneration uint64
+
+// RuleSnapshot is a consistent view of what the top level rules resolve against.
+// The maps are shared with the tunnel and must not be modified.
+type RuleSnapshot struct {
+	Proxies       map[string]C.Proxy
+	Providers     map[string]P.ProxyProvider
+	RuleProviders map[string]P.RuleProvider
+	SubRules      map[string][]C.Rule
+
+	generation uint64
+}
+
+// SnapshotRules returns the proxies, providers, rule providers and sub-rules,
+// read together under the config lock.
+func SnapshotRules() RuleSnapshot {
+	configMux.RLock()
+	defer configMux.RUnlock()
+	return RuleSnapshot{
+		Proxies:       proxies,
+		Providers:     providers,
+		RuleProviders: ruleProviders,
+		SubRules:      subRules,
+		generation:    ruleGeneration,
+	}
+}
+
+// ReplaceRules swaps the top level rules for newRules, parsed against snap.
+// Sub-rules and rule providers are kept. If the config changed since snap was
+// taken, nothing is replaced and ErrRulesChanged is returned.
+func ReplaceRules(snap RuleSnapshot, newRules []C.Rule) error {
+	configMux.Lock()
+	defer configMux.Unlock()
+	if snap.generation != ruleGeneration {
+		return ErrRulesChanged
+	}
+	rules = newRules
+	return nil
 }
 
 // Proxies return all proxies
@@ -231,6 +280,7 @@ func UpdateProxies(newProxies map[string]C.Proxy, newProviders map[string]P.Prox
 	configMux.Lock()
 	proxies = newProxies
 	providers = newProviders
+	ruleGeneration++
 	configMux.Unlock()
 }
 
@@ -526,7 +576,7 @@ func protocolVerdict(metadata *C.Metadata) bool {
 				ruleName = fmt.Sprintf("%s(%s)", rule.RuleType().String(), rule.Payload())
 			}
 			log.Infoln("[UDP] %s --> %s sniffed as %s, match %s using %s, dropped",
-				metadata.SourceDetail(), metadata.RemoteAddress(), metadata.SniffProtocol, ruleName, proxy.Name())
+				metadata.SourceDetail(), metadata.LogAddress(), metadata.SniffProtocol, ruleName, proxy.Name())
 			return true
 		}
 	}
@@ -570,7 +620,7 @@ func handleTCPConn(connCtx C.ConnContext) {
 	// If both trials have failed, we can do nothing but give up
 	if preHandleFailed {
 		log.Debugln("[Metadata PreHandle] failed to sniff a domain for connection %s --> %s, give up",
-			metadata.SourceDetail(), metadata.RemoteAddress())
+			metadata.SourceDetail(), metadata.LogAddress())
 		return
 	}
 
@@ -677,7 +727,7 @@ func handleTCPConn(connCtx C.ConnContext) {
 func logRejected(metadata *C.Metadata, err error) {
 	var limitErr *statistic.LimitError
 	if !errors.As(err, &limitErr) {
-		log.Infoln("[%s] %s --> %s rejected: %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), err)
+		log.Infoln("[%s] %s --> %s rejected: %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.LogAddress(), err)
 		return
 	}
 	if limitErr.Quiet {
@@ -687,33 +737,33 @@ func logRejected(metadata *C.Metadata, err error) {
 	if limitErr.Suppressed > 0 {
 		suppressed = fmt.Sprintf(" (and %d more since the last line)", limitErr.Suppressed)
 	}
-	log.Infoln("[%s] %s --> %s rejected by the user limits: %s%s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), limitErr.Detail, suppressed)
+	log.Infoln("[%s] %s --> %s rejected by the user limits: %s%s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.LogAddress(), limitErr.Detail, suppressed)
 }
 
 func logMetadataErr(metadata *C.Metadata, rule C.Rule, proxy C.ProxyAdapter, err error) {
 	if rule == nil {
-		log.Warnln("[%s] dial %s %s --> %s error: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
+		log.Warnln("[%s] dial %s %s --> %s error: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), metadata.SourceDetail(), metadata.LogAddress(), err.Error())
 	} else {
-		log.Warnln("[%s] dial %s (match %s/%s) %s --> %s error: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), rule.RuleType().String(), rule.Payload(), metadata.SourceDetail(), metadata.RemoteAddress(), err.Error())
+		log.Warnln("[%s] dial %s (match %s/%s) %s --> %s error: %s", strings.ToUpper(metadata.NetWork.String()), proxy.Name(), rule.RuleType().String(), rule.Payload(), metadata.SourceDetail(), metadata.LogAddress(), err.Error())
 	}
 }
 
 func logMetadata(metadata *C.Metadata, rule C.Rule, remoteConn C.Connection) {
 	switch {
 	case metadata.SpecialProxy != "":
-		log.Infoln("[%s] %s --> %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
+		log.Infoln("[%s] %s --> %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.LogAddress(), remoteConn.Chains().String())
 	case rule != nil:
 		if rule.Payload() != "" {
-			log.Infoln("[%s] %s --> %s match %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), fmt.Sprintf("%s(%s)", rule.RuleType().String(), rule.Payload()), remoteConn.Chains().String())
+			log.Infoln("[%s] %s --> %s match %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.LogAddress(), fmt.Sprintf("%s(%s)", rule.RuleType().String(), rule.Payload()), remoteConn.Chains().String())
 		} else {
-			log.Infoln("[%s] %s --> %s match %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), rule.RuleType().String(), remoteConn.Chains().String())
+			log.Infoln("[%s] %s --> %s match %s using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.LogAddress(), rule.RuleType().String(), remoteConn.Chains().String())
 		}
 	case mode == Global:
-		log.Infoln("[%s] %s --> %s using GLOBAL", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
+		log.Infoln("[%s] %s --> %s using GLOBAL", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.LogAddress())
 	case mode == Direct:
-		log.Infoln("[%s] %s --> %s using DIRECT", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress())
+		log.Infoln("[%s] %s --> %s using DIRECT", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.LogAddress())
 	default:
-		log.Infoln("[%s] %s --> %s doesn't match any rule using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.RemoteAddress(), remoteConn.Chains().String())
+		log.Infoln("[%s] %s --> %s doesn't match any rule using %s", strings.ToUpper(metadata.NetWork.String()), metadata.SourceDetail(), metadata.LogAddress(), remoteConn.Chains().String())
 	}
 }
 
